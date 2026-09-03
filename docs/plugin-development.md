@@ -1,17 +1,14 @@
 # Plugin Development
 
-Receipt parsers are implemented as plugins.
+Receipt parsers are implemented as plugins under the `plugins/` directory.
 
-The core application does not contain retailer-specific receipt detection or parsing logic. A plugin is responsible only for:
-
-1. Deciding whether it recognizes a receipt.
-2. Parsing the receipt text into the common receipt structure.
-
-The core application handles review, product mappings, database storage, and importing stock into Grocy.
+The core application handles receipt storage, product mapping, review, and Grocy imports. A plugin is responsible only for recognizing and parsing its retailer's receipt format.
 
 ## Plugin interface
 
-Every parser inherits from `ReceiptParser`:
+Every retailer parser inherits from `ReceiptParser`.
+
+A minimal plugin looks like this:
 
 ```python
 from .base import ReceiptParser
@@ -32,15 +29,19 @@ class CoopParser(ReceiptParser):
         }
 ```
 
-The plugin interface is defined in `plugins/base.py`.
+The base class is defined in:
+
+```text
+plugins/base.py
+```
 
 ## `matches()`
 
-`matches(text)` receives the raw text extracted from the uploaded PDF.
+The `matches()` method receives the text extracted from the uploaded PDF.
 
-Return `True` only when the receipt belongs to your retailer.
+Return `True` only when the receipt belongs to the retailer handled by the plugin.
 
-Detection should be specific enough to avoid claiming receipts belonging to another plugin.
+Keep recognition specific enough to avoid false matches.
 
 For example:
 
@@ -54,13 +55,11 @@ def matches(self, text: str) -> bool:
     )
 ```
 
-Keep retailer-specific detection inside the plugin.
-
-Do not add retailer checks to `app.py`.
+Do not add retailer-specific checks to `app.py`.
 
 ## `parse()`
 
-`parse(text)` converts the retailer's receipt format into the common receipt structure:
+The `parse()` method converts retailer-specific receipt text into the common receipt structure:
 
 ```python
 {
@@ -69,7 +68,7 @@ Do not add retailer checks to `app.py`.
 }
 ```
 
-A typical item contains information such as:
+Receipt items may contain fields such as:
 
 ```python
 {
@@ -77,31 +76,30 @@ A typical item contains information such as:
     "description": "Milk",
     "quantity": 2,
     "unit": "st",
-    "net_price": 29.90,
+    "gross": 29.90,
     "discount": 0.0,
+    "net": 29.90,
 }
 ```
 
-The parser should translate the retailer's terminology and formatting into these common fields.
+Use the existing parser implementation as the reference for the fields currently expected by the application.
 
-The existing ICA parser is the reference implementation.
+The parser should normalize retailer-specific terminology and formatting into the common structure.
 
 ## What plugins should not do
 
-A parser should not:
+Plugins should not:
 
 - call the Grocy API
 - access the SQLite database
 - create Grocy products
 - import stock
 - save product mappings
-- modify application state
 - contain web routes
 - modify templates
+- manage application translations
 
-The plugin should only translate receipt text into structured data.
-
-This keeps plugins independent from the application and makes them easier to test.
+Those responsibilities belong to the core application.
 
 ## Adding a new retailer
 
@@ -118,66 +116,84 @@ plugins/
 └── coop.py
 ```
 
-Implement a `ReceiptParser` subclass in `coop.py`.
+Implement a `ReceiptParser` subclass in the new file.
 
-No changes to `app.py` are required.
-
-The application automatically discovers parser classes in the `plugins/` directory.
+The application discovers parser classes automatically, so normally no changes to `app.py` or a central registry are required.
 
 ## Parser discovery
 
-The application scans `plugins/` for Python modules.
+The plugin discovery system scans the `plugins/` directory for Python modules and identifies classes inheriting from `ReceiptParser`.
 
-Files used by the plugin system itself are excluded:
+Framework modules such as `base.py` and `discovery.py` are not treated as retailer parsers.
 
-- `__init__.py`
-- `base.py`
-- `discovery.py`
-
-Any class that inherits from `ReceiptParser` is automatically registered.
-
-This means contributors do not need to edit a central parser registry.
+This means a new retailer can normally be added by creating one new plugin file.
 
 ## Testing
 
-Every new parser should include tests.
+New parsers should have tests covering:
 
-Tests should verify at least:
+- positive retailer recognition
+- negative recognition cases
+- product parsing
+- article numbers
+- quantities
+- units
+- prices
+- discounts
+- unusual or missing fields
 
-- receipts from the retailer are recognized
-- receipts from other retailers are not recognized
-- products are parsed correctly
-- quantities are parsed correctly
-- prices are parsed correctly
-- discounts are handled correctly
-- unusual or missing fields do not crash the parser
+Tests should be placed under:
 
-Receipt text fixtures should be sanitized and must not contain personal information.
+```text
+tests/plugins/
+```
 
-## Receipt data
+Receipt fixtures are useful for parser tests, but they must be sanitized before being committed.
 
-Do not commit real receipts containing personal or sensitive information.
+## Receipt fixtures and privacy
 
-When adding test fixtures:
+Never commit an unredacted real receipt.
 
-- remove names
-- remove addresses
-- remove payment card information
-- remove loyalty or customer identifiers
-- remove transaction identifiers where appropriate
+Remove or anonymize:
 
-Keep only the receipt information required to test the parser.
+- names
+- addresses
+- payment information
+- loyalty/customer identifiers
+- personal identifiers
+- unnecessary transaction identifiers
 
-## Pull requests
+Keep only the information required to test the parser.
 
-A new retailer parser should normally include:
+## Common receipt structure
 
-1. The parser implementation.
-2. Tests.
-3. Sanitized receipt fixtures where useful.
-4. Documentation for retailer-specific assumptions.
-5. Any changes to the common receipt format, if genuinely required.
+The parser returns:
 
-Avoid changing the core application just to support one retailer.
+```python
+{
+    "metadata": {...},
+    "items": [...]
+}
+```
 
-If a retailer requires information that does not fit the existing common structure, explain the requirement in the pull request before changing the shared interface.
+Avoid adding retailer-specific fields unless there is a strong reason.
+
+If a new retailer requires a change to the shared structure, document the requirement and consider whether the field is genuinely common enough to belong in the core model.
+
+## Parser development checklist
+
+Before submitting a new parser:
+
+- [ ] `matches()` recognizes the intended retailer.
+- [ ] `matches()` rejects unrelated receipts.
+- [ ] `parse()` returns the common receipt structure.
+- [ ] Article numbers are preserved where available.
+- [ ] Product descriptions are parsed correctly.
+- [ ] Quantities and units are handled correctly.
+- [ ] Prices and discounts are handled correctly.
+- [ ] Missing or unusual fields are handled safely.
+- [ ] Tests cover positive and negative recognition.
+- [ ] Test fixtures contain no personal information.
+- [ ] The plugin contains no Grocy API logic.
+- [ ] The plugin contains no database access.
+- [ ] No core application changes are made unless genuinely necessary.

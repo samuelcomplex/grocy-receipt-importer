@@ -1,7 +1,9 @@
 import hashlib
+import difflib
 import io
 import json
 import os
+from pathlib import Path
 import re
 import sqlite3
 import uuid
@@ -9,7 +11,9 @@ from datetime import datetime
 from decimal import Decimal
 
 import requests
-from fastapi import FastAPI, File, Request, UploadFile
+
+from common import money, money_str, quantity
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pypdf import PdfReader
@@ -19,8 +23,67 @@ GROCY_BASE_URL = os.environ.get("GROCY_BASE_URL", "http://grocy").rstrip("/")
 GROCY_API_KEY = os.environ.get("GROCY_API_KEY", "")
 DB_PATH = "/data/receipts.sqlite3"
 
+TRANSLATIONS_DIR = Path(__file__).parent / "translations"
+DEFAULT_LANGUAGE = "en"
+
+
+def load_translations():
+    translations = {}
+
+    for path in TRANSLATIONS_DIR.glob("*.json"):
+        try:
+            translations[path.stem] = json.loads(
+                path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            continue
+
+    if DEFAULT_LANGUAGE not in translations:
+        translations[DEFAULT_LANGUAGE] = {}
+
+    return translations
+
+
+TRANSLATIONS = load_translations()
+
+
+def translate(key, language=DEFAULT_LANGUAGE):
+    language_data = TRANSLATIONS.get(language, {})
+    default_data = TRANSLATIONS.get(DEFAULT_LANGUAGE, {})
+
+    return language_data.get(
+        key,
+        default_data.get(key, key),
+    )
+
 app = FastAPI(title="Receipt Importer")
 templates = Jinja2Templates(directory="templates")
+def get_language(request):
+    language = request.cookies.get("language", DEFAULT_LANGUAGE)
+
+    if language not in TRANSLATIONS:
+        return DEFAULT_LANGUAGE
+
+    return language
+
+
+def render_template(request, template_name, context=None):
+    context = dict(context or {})
+    language = get_language(request)
+
+    context["language"] = language
+    context["available_languages"] = sorted(TRANSLATIONS)
+
+    def request_translate(key):
+        return translate(key, language)
+
+    context["t"] = request_translate
+
+    return templates.TemplateResponse(
+        request=request,
+        name=template_name,
+        context=context,
+    )
 
 
 def db():
@@ -103,19 +166,6 @@ def grocy_post(path, payload):
     return response.json()
 
 
-def normalize_unit(value):
-    value = value.strip().lower()
-
-    aliases = {
-        "piece": "st",
-        "pieces": "st",
-        "pcs": "st",
-        "pc": "st",
-    }
-
-    return aliases.get(value, value)
-
-
 def extract_pdf_text(pdf_data):
     reader = PdfReader(io.BytesIO(pdf_data))
 
@@ -144,6 +194,83 @@ DISCOUNT_RE = re.compile(
 
 def load_products():
     return grocy_get("/api/objects/products")
+
+
+def normalize_product_name(value):
+    value = value.lower().strip()
+    value = re.sub(r"[^a-z0-9åäöéèüæø]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def suggest_product_matches(items, products):
+    normalized_products = [
+        (
+            product,
+            normalize_product_name(product.get("name", "")),
+        )
+        for product in products
+        if product.get("name")
+    ]
+
+    for item in items:
+        if item.get("kind") != "product":
+            continue
+
+        if item.get("grocy_product_id"):
+            item["match_type"] = "saved"
+            continue
+
+        description = normalize_product_name(
+            item.get("description", "")
+        )
+
+        if not description:
+            continue
+
+        exact = next(
+            (
+                product
+                for product, normalized_name
+                in normalized_products
+                if normalized_name == description
+            ),
+            None,
+        )
+
+        if exact:
+            item["suggested_grocy_product_id"] = exact["id"]
+            item["suggested_grocy_product_name"] = exact["name"]
+            item["match_score"] = 1.0
+            item["match_type"] = "exact"
+            continue
+
+        candidates = difflib.get_close_matches(
+            description,
+            [name for _, name in normalized_products],
+            n=1,
+            cutoff=0.70,
+        )
+
+        if candidates:
+            best_name = candidates[0]
+
+            product = next(
+                product
+                for product, normalized_name
+                in normalized_products
+                if normalized_name == best_name
+            )
+
+            score = difflib.SequenceMatcher(
+                None,
+                description,
+                best_name,
+            ).ratio()
+
+            item["suggested_grocy_product_id"] = product["id"]
+            item["suggested_grocy_product_name"] = product["name"]
+            item["match_score"] = round(score, 2)
+            item["match_type"] = "suggested"
 
 
 def apply_saved_mappings(metadata, items):
@@ -203,12 +330,63 @@ def home(request: Request):
             "status": row["status"],
         })
 
-    return templates.TemplateResponse(
+    return render_template(
+        request,
         "index.html",
         {
-            "request": request,
             "recent": receipts,
         },
+    )
+
+
+@app.post("/language")
+async def set_language(request: Request, language: str = Form(...)):
+    if language not in TRANSLATIONS:
+        language = DEFAULT_LANGUAGE
+
+    response = RedirectResponse(
+        url=request.headers.get("referer", "/"),
+        status_code=303,
+    )
+    response.set_cookie(
+        key="language",
+        value=language,
+        max_age=31536000,
+        samesite="lax",
+    )
+
+    return response
+
+
+@app.post("/receipt/{receipt_id}/delete")
+async def delete_receipt(
+    request: Request,
+    receipt_id: str,
+):
+    con = db()
+
+    row = con.execute(
+        "SELECT id FROM receipts WHERE id = ?",
+        (receipt_id,),
+    ).fetchone()
+
+    if not row:
+        con.close()
+        return HTMLResponse(
+            "Receipt not found",
+            status_code=404,
+        )
+
+    con.execute(
+        "DELETE FROM receipts WHERE id = ?",
+        (receipt_id,),
+    )
+    con.commit()
+    con.close()
+
+    return RedirectResponse(
+        url="/",
+        status_code=303,
     )
 
 
@@ -249,6 +427,18 @@ async def upload(
     parsed = parser.parse(text)
     metadata = parsed["metadata"]
     items = parsed["items"]
+
+    metadata["parser_name"] = getattr(
+        parser,
+        "retailer",
+        parser.__class__.__name__,
+    )
+
+    metadata["parser_theme"] = getattr(
+        parser,
+        "theme",
+        {},
+    )
 
     apply_saved_mappings(metadata, items)
 
@@ -311,105 +501,65 @@ def review(
     metadata = json.loads(row["metadata_json"])
     items = json.loads(row["items_json"])
 
+    parser_name = metadata.get("parser_name")
+    parser_theme = metadata.get("parser_theme")
+
+    if not parser_name:
+        parser = find_parser(row["raw_text"])
+
+        if parser:
+            parser_name = getattr(
+                parser,
+                "retailer",
+                parser.__class__.__name__,
+            )
+            parser_theme = getattr(
+                parser,
+                "theme",
+                {},
+            )
+
+            metadata["parser_name"] = parser_name
+            metadata["parser_theme"] = parser_theme
+
+            con = db()
+            con.execute(
+                """
+                UPDATE receipts
+                SET metadata_json = ?
+                WHERE id = ?
+                """,
+                (
+                    json.dumps(metadata, ensure_ascii=False),
+                    receipt_id,
+                ),
+            )
+            con.commit()
+            con.close()
+
+    parser_name = parser_name or "Unknown"
+    parser_theme = parser_theme or {}
+
     try:
         products = load_products()
+        suggest_product_matches(items, products)
         grocy_error = None
     except Exception as exc:
         products = []
         grocy_error = str(exc)
 
-    return templates.TemplateResponse(
+    return render_template(
+        request,
         "review.html",
         {
-            "request": request,
             "receipt_id": receipt_id,
             "metadata": metadata,
             "items": items,
             "products": products,
+            "parser_name": parser_name,
+            "parser_theme": parser_theme,
             "grocy_error": grocy_error,
         },
-    )
-
-
-@app.post("/receipt/{receipt_id}/mapping")
-async def mapping(
-    receipt_id: str,
-    article_number: str,
-    grocy_product_id: int,
-):
-    con = db()
-
-    row = con.execute(
-        "SELECT * FROM receipts WHERE id = ?",
-        (receipt_id,),
-    ).fetchone()
-
-    if not row:
-        con.close()
-        return HTMLResponse(
-            "Receipt not found",
-            status_code=404,
-        )
-
-    metadata = json.loads(row["metadata_json"])
-    items = json.loads(row["items_json"])
-
-    products = load_products()
-
-    product = next(
-        (
-            p
-            for p in products
-            if int(p["id"]) == grocy_product_id
-        ),
-        None,
-    )
-
-    if product:
-        con.execute(
-            """
-            INSERT OR REPLACE INTO mappings (
-                store_org,
-                article_number,
-                grocy_product_id,
-                grocy_product_name,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                metadata.get("store_org", ""),
-                article_number,
-                grocy_product_id,
-                product["name"],
-                datetime.now().isoformat(timespec="seconds"),
-            ),
-        )
-
-        for item in items:
-            if item["article_number"] == article_number:
-                item["grocy_product_id"] = grocy_product_id
-                item["grocy_product_name"] = product["name"]
-
-        con.execute(
-            """
-            UPDATE receipts
-            SET items_json = ?
-            WHERE id = ?
-            """,
-            (
-                json.dumps(items, ensure_ascii=False),
-                receipt_id,
-            ),
-        )
-
-        con.commit()
-
-    con.close()
-
-    return RedirectResponse(
-        f"/receipt/{receipt_id}",
-        status_code=303,
     )
 
 
@@ -438,49 +588,93 @@ async def import_receipt(
 
     form = await request.form()
 
-    imported = []
-    skipped = []
-    errors = []
+    imported = 0
+    skipped = 0
+    failed = 0
+
+    try:
+        products = load_products()
+        product_names = {
+            str(product["id"]): product["name"]
+            for product in products
+        }
+        grocy_error = None
+    except Exception as exc:
+        products = []
+        product_names = {}
+        grocy_error = str(exc)
+
+    con = db()
 
     for index, item in enumerate(items):
         if item["kind"] != "product":
-            skipped.append(item["description"])
+            item["status"] = "Skipped"
+            skipped += 1
             continue
 
-        if f"include_{index}" not in form:
-            skipped.append(item["description"])
+        if item.get("status") == "Imported":
             continue
 
-        product_id = item.get("grocy_product_id")
+        include = f"include_{index}" in form
+        selected_product_id = form.get(f"product_{index}")
 
-        if not product_id:
-            errors.append(
-                f"{item['description']} "
-                f"({item['article_number']}): "
-                "no Grocy product mapping"
+        if not include or not selected_product_id:
+            item["status"] = "Skipped"
+            skipped += 1
+            continue
+
+        selected_product_id = str(selected_product_id)
+        product_name = product_names.get(selected_product_id)
+
+        if not product_name:
+            item["status"] = "Failed"
+            failed += 1
+            continue
+
+        article_number = item.get("article_number")
+
+        if article_number:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO mappings (
+                    store_org,
+                    article_number,
+                    grocy_product_id,
+                    grocy_product_name,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    metadata.get("store_org", ""),
+                    article_number,
+                    int(selected_product_id),
+                    product_name,
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
             )
-            continue
 
-        amount = quantity(item["quantity"])
-        net_price = money(item["net"])
-        receipt_unit = item["unit"]
+            item["grocy_product_id"] = int(selected_product_id)
+            item["grocy_product_name"] = product_name
 
         try:
+            amount = quantity(item["quantity"])
+            net_price = money(item["net"])
+            receipt_unit = item["unit"]
+
             details = grocy_get(
-                f"/api/stock/products/{product_id}"
+                f"/api/stock/products/{selected_product_id}"
             )
 
-            stock_unit = normalize_unit(
-                (details.get("quantity_unit_stock") or {}).get(
-                    "name", ""
-                )
-            )
+            stock_unit = (
+                details.get("quantity_unit_stock") or {}
+            ).get("name", "").strip().lower()
 
-            purchase_unit = normalize_unit(
-                (details.get("default_quantity_unit_purchase") or {}).get(
-                    "name", ""
-                )
-            )
+            purchase_unit = (
+                details.get("default_quantity_unit_purchase") or {}
+            ).get("name", "").strip().lower()
+
+            receipt_unit = receipt_unit.strip().lower()
 
             factor = Decimal(
                 str(
@@ -492,13 +686,6 @@ async def import_receipt(
             )
 
             if receipt_unit == stock_unit:
-                stock_amount = amount
-
-            elif (
-                receipt_unit == "st"
-                and purchase_unit == stock_unit
-                and factor == 1
-            ):
                 stock_amount = amount
 
             elif receipt_unit == purchase_unit:
@@ -524,40 +711,55 @@ async def import_receipt(
             }
 
             grocy_post(
-                f"/api/stock/products/{product_id}/add",
+                f"/api/stock/products/{selected_product_id}/add",
                 payload,
             )
 
-            imported.append(
-                f"{item['description']} — "
-                f"{money_str(net_price)} SEK"
-            )
+            item["status"] = "Imported"
+            imported += 1
 
-        except Exception as exc:
-            errors.append(
-                f"{item['description']} "
-                f"({item['article_number']}): {exc}"
-            )
-
-    status = "imported" if not errors else "partial"
-
-    con = db()
+        except Exception:
+            item["status"] = "Failed"
+            failed += 1
 
     con.execute(
-        "UPDATE receipts SET status = ? WHERE id = ?",
-        (status, receipt_id),
+        """
+        UPDATE receipts
+        SET items_json = ?,
+            status = ?
+        WHERE id = ?
+        """,
+        (
+            json.dumps(items, ensure_ascii=False),
+            "partial" if failed else "imported",
+            receipt_id,
+        ),
     )
 
     con.commit()
     con.close()
 
-    return templates.TemplateResponse(
-        "result.html",
+    return render_template(
+        request,
+        "review.html",
         {
-            "request": request,
+            "receipt_id": receipt_id,
             "metadata": metadata,
-            "imported": imported,
-            "skipped": skipped,
-            "errors": errors,
+            "items": items,
+            "products": products,
+            "parser_name": metadata.get(
+                "parser_name",
+                "Unknown",
+            ),
+            "parser_theme": metadata.get(
+                "parser_theme",
+                {},
+            ),
+            "grocy_error": grocy_error,
+            "import_summary": {
+                "imported": imported,
+                "skipped": skipped,
+                "failed": failed,
+            },
         },
     )

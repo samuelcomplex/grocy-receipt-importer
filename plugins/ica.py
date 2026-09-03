@@ -1,8 +1,33 @@
+import re
+
 from .base import ReceiptParser
+from common import money, money_str, quantity
+
+
+PRODUCT_RE = re.compile(
+    r"^(?P<description>.+?)\s+"
+    r"(?P<article>\d{7})\s+"
+    r"(?P<unit_price>-?\d+,\d{2})\s+"
+    r"(?P<quantity>\d+(?:,\d+)?)\s+"
+    r"(?P<unit>kg|g|l|ml|st)\s+"
+    r"(?P<sum>-?\d+,\d{2})$",
+    re.IGNORECASE,
+)
+
+
+DISCOUNT_RE = re.compile(
+    r"^(?P<description>.+?)\s+(?P<amount>-\d+,\d{2})$"
+)
 
 
 class ICAParser(ReceiptParser):
     retailer = "ICA"
+
+    theme = {
+        "accent": "#e30613",
+        "accent_text": "#ffffff",
+        "accent_soft": "#ffe5e7",
+    }
 
     def matches(self, text: str) -> bool:
         upper = text.upper()
@@ -44,28 +69,38 @@ class ICAParser(ReceiptParser):
                     metadata["address"] = " ".join(lines[max(0, i - 1):i + 1])
                     break
 
-            # Metadata block used by the ICA PDF
-            for i, line in enumerate(lines):
-                if line == "Datum" and i + 6 < len(lines):
-                    values = lines[i + 1:i + 7]
+            # Metadata block used by the ICA PDF.
+            # The PDF extracts six labels followed by six values.
+            metadata_labels = [
+                "Datum",
+                "Tid",
+                "Org nr",
+                "Kvitto nr",
+                "Kassa",
+                "Kassör",
+            ]
 
-                    if re.match(r"^\d{4}-\d{2}-\d{2}$", values[0]):
-                        metadata["date"] = values[0]
+            for i in range(len(lines) - len(metadata_labels)):
+                if lines[i:i + len(metadata_labels)] == metadata_labels:
+                    values_start = i + len(metadata_labels)
+                    values = lines[
+                        values_start:
+                        values_start + len(metadata_labels)
+                    ]
 
-                    if len(values) > 1:
-                        metadata["time"] = values[1]
+                    fields = [
+                        "date",
+                        "time",
+                        "store_org",
+                        "receipt_no",
+                        "register",
+                        "cashier",
+                    ]
 
-                    if len(values) > 2:
-                        metadata["store_org"] = values[2]
+                    for field, value in zip(fields, values):
+                        metadata[field] = value
 
-                    if len(values) > 3:
-                        metadata["receipt_no"] = values[3]
-
-                    if len(values) > 4:
-                        metadata["register"] = values[4]
-
-                    if len(values) > 5:
-                        metadata["cashier"] = values[5]
+                    break
 
             items = []
 
@@ -84,7 +119,7 @@ class ICAParser(ReceiptParser):
                         "article_number": match.group("article"),
                         "unit_price": money_str(unit_price),
                         "quantity": str(qty),
-                        "unit": normalize_unit(match.group("unit")),
+                        "unit": match.group("unit").strip().lower(),
                         "gross": money_str(gross),
                         "discount": "0,00",
                         "net": money_str(gross),
@@ -140,5 +175,8 @@ class ICAParser(ReceiptParser):
                         + discount
                     )
 
-            return metadata, items
+            return {
+                "metadata": metadata,
+                "items": items,
+            }
 

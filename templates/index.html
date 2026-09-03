@@ -4,26 +4,39 @@
 
 <div class="card">
 
-<h2>Upload PDF</h2>
+<h2>{{ t("ui.upload_pdf") }}</h2>
 
 <form action="/upload" method="post" enctype="multipart/form-data">
 
-<input
-    type="file"
-    name="pdf"
-    accept="application/pdf"
-    required
->
+<div class="file-upload">
+    <input
+        type="file"
+        name="pdf"
+        id="pdf-file"
+        accept="application/pdf"
+        required
+        hidden
+    >
+
+    <label for="pdf-file" class="secondary-button">
+        {{ t("ui.choose_file") }}
+    </label>
+
+    <span id="pdf-file-name" class="small">
+        {{ t("ui.no_file_chosen") }}
+    </span>
+</div>
+
+<br>
 
 <button type="submit">
-    Parse receipt
+    {{ t("ui.parse_receipt") }}
 </button>
 
 </form>
 
 <p class="small">
-The receipt is not imported into Grocy until you explicitly press
-"Import selected items".
+{{ t("ui.receipt_not_imported") }}
 </p>
 
 </div>
@@ -33,15 +46,16 @@ The receipt is not imported into Grocy until you explicitly press
 
 <div class="card">
 
-<h2>Recent receipts</h2>
+<h2>{{ t("ui.recent_receipts") }}</h2>
 
 <table>
 
 <tr>
-    <th>Date</th>
-    <th>Store</th>
-    <th>File</th>
-    <th>Status</th>
+    <th>{{ t("ui.date") }}</th>
+    <th>{{ t("ui.store") }}</th>
+    <th>{{ t("ui.file") }}</th>
+    <th>{{ t("ui.status") }}</th>
+    <th class="receipt-actions-header"></th>
 </tr>
 
 {% for receipt in recent %}
@@ -49,9 +63,7 @@ The receipt is not imported into Grocy until you explicitly press
 <tr>
 
 <td>
-<a href="/receipt/{{ receipt.id }}">
 {{ receipt.date }}
-</a>
 </td>
 
 <td>
@@ -66,6 +78,35 @@ The receipt is not imported into Grocy until you explicitly press
 {{ receipt.status }}
 </td>
 
+<td class="receipt-row-actions">
+
+<a
+    href="/receipt/{{ receipt.id }}"
+    class="receipt-icon-button"
+    title="{{ t("ui.open_receipt") }}"
+    aria-label="{{ t("ui.open_receipt") }}"
+>
+    ↗
+</a>
+
+<form
+    action="/receipt/{{ receipt.id }}/delete"
+    method="post"
+    class="inline-form"
+    onsubmit="return confirm('{{ t('ui.delete_receipt_confirm') }}');"
+>
+    <button
+        type="submit"
+        class="receipt-icon-button delete-icon-button"
+        title="{{ t("ui.delete_receipt_title") }}"
+        aria-label="{{ t("ui.delete_receipt_title") }}"
+    >
+        🗑
+    </button>
+</form>
+
+</td>
+
 </tr>
 
 {% endfor %}
@@ -75,5 +116,18 @@ The receipt is not imported into Grocy until you explicitly press
 </div>
 
 {% endif %}
+
+<script>
+const pdfFile = document.getElementById("pdf-file");
+const pdfFileName = document.getElementById("pdf-file-name");
+
+pdfFile.addEventListener("change", function () {
+    if (this.files.length) {
+        pdfFileName.textContent = this.files[0].name;
+    } else {
+        pdfFileName.textContent = "{{ t('ui.no_file_chosen') }}";
+    }
+});
+</script>
 
 {% endblock %}

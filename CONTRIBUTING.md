@@ -1,153 +1,143 @@
 # Contributing
 
-Thank you for contributing to Grocy Receipt Importer.
+Thanks for contributing to Grocy Receipt Importer.
 
-Contributions are especially welcome for adding support for new retailers and improving existing receipt parsers.
+The project is especially interested in new retailer parsers, parser improvements, bug fixes, and usability improvements.
 
-## Adding a new retailer
+## Adding a retailer
 
-Retailer-specific receipt handling belongs in a plugin.
-
-Create a new file under:
+Retailer-specific receipt parsing belongs in a plugin under:
 
 ```text
 plugins/
 ```
 
-For example:
+Create a new parser by inheriting from `ReceiptParser`.
 
-```text
-plugins/coop.py
-```
+See [docs/plugin-development.md](docs/plugin-development.md) for the plugin interface, discovery process, testing guidance, and privacy requirements.
 
-The plugin should inherit from `ReceiptParser`:
+## Keep retailer logic in plugins
 
-```python
-from .base import ReceiptParser
+Plugins should handle:
 
+- retailer recognition
+- receipt parsing
+- normalization into the common receipt structure
 
-class CoopParser(ReceiptParser):
-    retailer = "Coop"
+Plugins should not handle:
 
-    def matches(self, text: str) -> bool:
-        # Return True only for receipts belonging to this retailer.
-        ...
+- Grocy API communication
+- database access
+- product mappings
+- stock imports
+- web routes
+- templates
+- translations
 
-    def parse(self, text: str) -> dict:
-        # Return the common receipt structure.
-        ...
-```
-
-You do not need to modify `app.py` or a central parser registry.
-
-The application discovers parser plugins automatically.
-
-## Keep plugins independent
-
-A parser should only recognize and translate receipt text.
-
-Plugins should not:
-
-- call the Grocy API
-- access the SQLite database
-- create Grocy products
-- import stock
-- save product mappings
-- contain web routes
-- modify templates
-
-The core application is responsible for those operations.
-
-See [`docs/architecture.md`](docs/architecture.md) and [`docs/plugin-development.md`](docs/plugin-development.md).
+Changes that affect the core application should be made only when they are genuinely required.
 
 ## Tests
 
-Please add tests for new parsers under:
+New parser functionality should include tests.
 
-```text
-tests/plugins/
-```
+Test at least:
 
-At minimum, test:
-
-- positive retailer recognition
-- negative recognition cases
+- retailer recognition
+- rejection of unrelated receipts
 - product parsing
 - article numbers
-- quantities
-- units
-- prices
-- discounts
-- unusual or missing fields
+- quantities and units
+- prices and discounts
+- missing or unusual fields
 
-Run the existing test suite before submitting a pull request.
+Run the test suite before submitting a pull request.
 
 ## Receipt fixtures
 
-Receipt fixtures are useful for parser development and regression testing.
+Receipt fixtures are useful for parser development, but never commit unredacted real receipts.
 
-However, never commit an unredacted real receipt.
-
-Remove or anonymize:
+Remove or anonymize personal and sensitive information, including:
 
 - names
 - addresses
 - payment information
 - loyalty/customer identifiers
-- personal identifiers
 - unnecessary transaction identifiers
 
-Keep only the information needed to test the parser.
+## Internationalization
 
-## Common receipt structure
+User-facing text should use the translation system.
 
-Plugins should return:
+Translations are stored in:
 
-```python
-{
-    "metadata": {...},
-    "items": [...]
-}
+```text
+translations/
+├── en.json
+└── sv.json
 ```
 
-Avoid adding retailer-specific fields to the common structure unless there is a strong reason.
+When adding a new user-facing string:
 
-If a new retailer requires a change to the shared interface, explain the requirement in the pull request before making the change.
-
-## Code style
-
-Keep parser code focused and readable.
-
-Prefer small helper functions when they make complicated receipt parsing easier to understand.
-
-Avoid changing unrelated parts of the application in a retailer-specific pull request.
+1. Add the key to `translations/en.json`.
+2. Add the corresponding Swedish translation to `translations/sv.json`.
+3. Use the translation helper in templates.
+4. Keep the application name as `Grocy Receipt Importer`.
 
 ## Pull requests
 
-A new retailer parser should normally include:
+Please include:
 
-1. The parser implementation.
-2. Tests.
-3. Sanitized receipt fixtures where useful.
-4. Documentation for important retailer-specific assumptions.
+- a clear description of the change
+- tests for new parser functionality
+- sanitized receipt fixtures where useful
+- documentation updates when behavior or interfaces change
 
-The pull request description should explain:
+For new retailers, describe which receipt formats were tested and any known limitations.
 
-- which retailer is being added
-- which receipt formats were tested
-- any known limitations
-- any assumptions made while parsing
+## Security
 
-## Before submitting
+Never commit:
 
-Please check that:
+- `.env`
+- Grocy API keys
+- private database files
+- real receipts containing personal information
+- payment information or customer identifiers
 
-- the application still starts
-- existing parsers still work
-- the new parser is automatically discovered
-- tests pass
-- no secrets are included
-- no real personal receipt data is included
-- retailer-specific logic has not been added to the core
+If you discover a security issue, report it privately rather than publishing sensitive details in a public issue.
 
-Thank you for helping make the importer useful for more Grocy users.
+## Versioning
+
+The current application version is stored in:
+
+```text
+VERSION
+```
+
+The project follows Semantic Versioning:
+
+```text
+MAJOR.MINOR.PATCH
+```
+
+Release notes are maintained in:
+
+```text
+CHANGELOG.md
+```
+
+Git release tags use the format:
+
+```text
+v0.2.0
+```
+
+When preparing a release:
+
+1. Update `VERSION`.
+2. Update `CHANGELOG.md`.
+3. Run tests and validation.
+4. Review the complete Git diff.
+5. Commit the release.
+6. Create the matching Git tag.
+7. Push the commit and tag.

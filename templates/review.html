@@ -2,9 +2,20 @@
 
 {% block content %}
 
-<div class="card">
+<div
+    class="card receipt-header"
+    style="
+        --parser-accent: {{ parser_theme.accent|default('#666666') }};
+        --parser-accent-text: {{ parser_theme.accent_text|default('#ffffff') }};
+        --parser-accent-soft: {{ parser_theme.accent_soft|default('#eeeeee') }};
+    "
+>
 
-<h2>Receipt review</h2>
+<h2>{{ t("ui.receipt_review") }}</h2>
+
+<div class="parser-badge">
+    <strong>{{ t("ui.parser") }}:</strong> {{ parser_name }}
+</div>
 
 <p>
 <strong>{{ metadata.store_name }}</strong><br>
@@ -12,17 +23,27 @@
 </p>
 
 <p>
-{{ metadata.date }}
-{{ metadata.time }}
-· Receipt {{ metadata.receipt_no }}
-· Org {{ metadata.store_org }}
+<strong>{{ t("ui.date") }}:</strong> {{ metadata.date }}
+· <strong>{{ t("ui.time") }}:</strong> {{ metadata.time }}
+· <strong>{{ t("ui.register") }}:</strong> {{ metadata.register }}
+· <strong>{{ t("ui.organization_number") }}:</strong> {{ metadata.store_org }}
+· <strong>{{ t("ui.receipt_number") }}:</strong> {{ metadata.receipt_no }}
 </p>
 
 {% if grocy_error %}
 <p class="error">
-<strong>Grocy connection error:</strong>
+<strong>{{ t("ui.grocy_connection_error") }}:</strong>
 {{ grocy_error }}
 </p>
+{% endif %}
+
+{% if import_summary %}
+<div class="import-summary">
+    <strong>{{ t("ui.import_result") }}:</strong>
+    {{ import_summary.imported }} {{ t("ui.imported") }},
+    {{ import_summary.skipped }} {{ t("ui.skipped") }},
+    {{ import_summary.failed }} {{ t("ui.failed") }}.
+</div>
 {% endif %}
 
 </div>
@@ -34,29 +55,50 @@
 <table>
 
 <tr>
-    <th>Import</th>
-    <th>Article number</th>
-    <th>Description</th>
-    <th>Qty</th>
-    <th>Gross</th>
-    <th>Discount</th>
-    <th>Net</th>
-    <th>Grocy product</th>
+    <th>{{ t("ui.status") }}</th>
+    <th>{{ t("ui.import") }}</th>
+    <th>{{ t("ui.article_number") }}</th>
+    <th>{{ t("ui.description") }}</th>
+    <th>{{ t("ui.qty") }}</th>
+    <th>{{ t("ui.gross") }}</th>
+    <th>{{ t("ui.discount") }}</th>
+    <th>{{ t("ui.net") }}</th>
+    <th>{{ t("ui.grocy_product") }}</th>
 </tr>
 
 {% for item in items %}
 
 <tr>
 
+<td class="item-status
+    {% if item.status == 'Imported' %}status-imported
+    {% elif item.status == 'Failed' %}status-failed
+    {% elif item.status == 'Skipped' %}status-skipped
+    {% endif %}
+">
+{% if item.status == "Imported" %}
+    {{ t("status.imported") }}
+{% elif item.status == "Failed" %}
+    {{ t("status.failed") }}
+{% elif item.status == "Skipped" %}
+    {{ t("status.skipped") }}
+{% elif item.kind == "product" %}
+    {{ t("ui.ready") }}
+{% else %}
+    {{ t("status.skipped") }}
+{% endif %}
+</td>
+
 <td>
 {% if item.kind == "product" %}
-<input
-    type="checkbox"
-    name="include_{{ loop.index0 }}"
-    {% if item.grocy_product_id %}checked{% endif %}
->
+    <input
+        type="checkbox"
+        name="include_{{ loop.index0 }}"
+        {% if item.status != "Skipped" %}checked{% endif %}
+        {% if item.status == "Imported" %}disabled{% endif %}
+    >
 {% else %}
-—
+    —
 {% endif %}
 </td>
 
@@ -79,37 +121,73 @@
 
 <td>
 
+{% if item.kind == "product" %}
+
+<div class="product-selection">
+
+<select name="product_{{ loop.index0 }}">
+
+<option value="">{{ t("ui.skip_item") }}</option>
+
 {% if item.grocy_product_id %}
 
-<strong>{{ item.grocy_product_name }}</strong>
-
-{% elif item.kind == "product" %}
-
-<input
-    type="hidden"
-    id="mapping-article-{{ loop.index0 }}"
-    value="{{ item.article_number }}"
+<option
+    value="{{ item.grocy_product_id }}"
+    selected
 >
+{{ item.grocy_product_name }}
+</option>
 
-<select id="mapping-product-{{ loop.index0 }}">
-<option value="">Choose product…</option>
+{% elif item.suggested_grocy_product_id %}
+
+<option
+    value="{{ item.suggested_grocy_product_id }}"
+    selected
+>
+{{ item.suggested_grocy_product_name }}
+</option>
+
+{% endif %}
 
 {% for product in products|sort(attribute="name") %}
+
+{% if
+    (not item.grocy_product_id or product.id|string != item.grocy_product_id|string)
+    and
+    (not item.suggested_grocy_product_id or product.id|string != item.suggested_grocy_product_id|string)
+%}
 <option value="{{ product.id }}">{{ product.name }}</option>
+{% endif %}
+
 {% endfor %}
 
 </select>
 
-<button
-    type="button"
-    onclick="linkProduct({{ loop.index0 }})"
->
-Link
-</button>
+{% if item.grocy_product_id %}
+<span
+    class="mapping-indicator mapping-saved"
+    title="{{ t('ui.saved_mapping') }}"
+    aria-label="{{ t('ui.saved_mapping') }}"
+>✓</span>
+{% elif item.suggested_grocy_product_id %}
+<span
+    class="mapping-indicator mapping-suggested"
+    title="{{ t('ui.suggested_match') }}"
+    aria-label="{{ t('ui.suggested_match') }}"
+>●</span>
+{% else %}
+<span
+    class="mapping-indicator mapping-none"
+    title="{{ t('ui.no_matching_product') }}"
+    aria-label="{{ t('ui.no_matching_product') }}"
+>!</span>
+{% endif %}
+
+</div>
 
 {% else %}
 
-<span class="small">Ignored</span>
+<span class="small">{{ t("ui.ignored") }}</span>
 
 {% endif %}
 
@@ -123,48 +201,101 @@ Link
 
 <br>
 
-<button type="submit">
-Import selected items into Grocy
+</form>
+
+<div class="receipt-actions">
+
+<button
+    type="submit"
+    form="import-form"
+    class="primary-button"
+    id="import-items-button"
+    disabled
+>
+    {{ t("ui.import_items_count").replace("{count}", "0") }}
 </button>
 
+<form
+    action="/upload"
+    method="post"
+    enctype="multipart/form-data"
+    id="another-receipt-form"
+    class="inline-form"
+>
+    <input
+        type="file"
+        name="pdf"
+        id="another-file"
+        accept="application/pdf,.pdf"
+        hidden
+    >
+    <button
+        type="submit"
+        class="secondary-button"
+        id="another-file-button"
+    >
+        {{ t("ui.parse_another_receipt") }}
+    </button>
+</form>
+
+<a href="/" class="secondary-button back-button">
+    ← {{ t("ui.back") }}
+</a>
+
+<form
+    action="/receipt/{{ receipt_id }}/delete"
+    method="post"
+    class="inline-form"
+    onsubmit="return confirm('{{ t('ui.delete_receipt_confirm') }}');"
+>
+    <button
+        type="submit"
+        class="delete-button"
+        title="{{ t('ui.delete_receipt_title') }}"
+    >
+        {{ t("ui.delete_receipt") }}
+    </button>
 </form>
 
 </div>
 
 <script>
+const anotherFile = document.getElementById("another-file");
+const anotherFileButton = document.getElementById("another-file-button");
 
-async function linkProduct(index) {
-    const article = document.getElementById(
-        `mapping-article-${index}`
-    ).value;
-
-    const product = document.getElementById(
-        `mapping-product-${index}`
-    ).value;
-
-    if (!product) {
-        alert("Choose a Grocy product first.");
-        return;
+anotherFileButton.addEventListener("click", function (event) {
+    if (!anotherFile.files.length) {
+        event.preventDefault();
+        anotherFile.click();
     }
+});
 
-    const params = new URLSearchParams({
-        article_number: article,
-        grocy_product_id: product
-    });
-
-    const response = await fetch(
-        `/receipt/{{ receipt_id }}/mapping?${params.toString()}`,
-        { method: "POST" }
-    );
-
-    if (!response.ok) {
-        alert("Could not link the product.");
-        return;
+anotherFile.addEventListener("change", function () {
+    if (this.files.length) {
+        anotherFileButton.textContent = "{{ t('ui.parse_selected_receipt') }}";
     }
+});
 
-    window.location.reload();
+const importItemsButton = document.getElementById("import-items-button");
+const importForm = document.getElementById("import-form");
+
+function updateImportButton() {
+    const selected = importForm.querySelectorAll(
+        'input[type="checkbox"][name^="include_"]:checked:not(:disabled)'
+    ).length;
+
+    importItemsButton.disabled = selected === 0;
+    importItemsButton.textContent =
+        "{{ t('ui.import_items_count') }}".replace("{count}", selected);
 }
 
+importForm.querySelectorAll(
+    'input[type="checkbox"][name^="include_"]'
+).forEach(function (checkbox) {
+    checkbox.addEventListener("change", updateImportButton);
+});
+
+updateImportButton();
 </script>
 
 {% endblock %}
