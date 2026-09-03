@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card">
+
+<h2>Upload PDF</h2>
+
+<form action="/upload" method="post" enctype="multipart/form-data">
+
+<input
+    type="file"
+    name="pdf"
+    accept="application/pdf"
+    required
+>
+
+<button type="submit">
+    Parse receipt
+</button>
+
+</form>
+
+<p class="small">
+The receipt is not imported into Grocy until you explicitly press
+"Import selected items".
+</p>
+
+</div>
+
+
+{% if recent %}
+
+<div class="card">
+
+<h2>Recent receipts</h2>
+
+<table>
+
+<tr>
+    <th>Date</th>
+    <th>Store</th>
+    <th>File</th>
+    <th>Status</th>
+</tr>
+
+{% for receipt in recent %}
+
+<tr>
+
+<td>
+<a href="/receipt/{{ receipt.id }}">
+{{ receipt.date }}
+</a>
+</td>
+
+<td>
+{{ receipt.store }}
+</td>
+
+<td>
+{{ receipt.filename }}
+</td>
+
+<td>
+{{ receipt.status }}
+</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

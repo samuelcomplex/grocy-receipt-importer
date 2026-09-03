@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Receipt Importer</title>
+
+<script>
+(function () {
+    const theme = localStorage.getItem("theme");
+    if (theme === "dark") {
+        document.documentElement.dataset.theme = "dark";
+    }
+})();
+</script>
+
+<style>
+:root {
+    color-scheme: light;
+
+    --background: #f5f5f5;
+    --surface: #fff;
+    --text: #222;
+    --muted: #666;
+    --border: #ddd;
+    --shadow: #0001;
+    --input-background: #fff;
+    --button-background: #eee;
+    --error: #a00;
+    --warning: #996000;
+    --success: #176b2c;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --background: #181818;
+    --surface: #242424;
+    --text: #eee;
+    --muted: #aaa;
+    --border: #444;
+    --shadow: #0006;
+    --input-background: #303030;
+    --button-background: #383838;
+    --error: #ff7b7b;
+    --warning: #ffc857;
+    --success: #6edb8a;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    background: var(--background);
+    color: var(--text);
+    transition: background .2s, color .2s;
+}
+
+.card {
+    background: var(--surface);
+    padding: 1.25rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 5px var(--shadow);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: .55rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.money {
+    text-align: right;
+    white-space: nowrap;
+}
+
+button,
+input,
+select {
+    font: inherit;
+    padding: .45rem;
+    background: var(--input-background);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+button {
+    background: var(--button-background);
+    cursor: pointer;
+}
+
+button:hover {
+    filter: brightness(1.1);
+}
+
+.small {
+    color: var(--muted);
+    font-size: .9rem;
+}
+
+.error {
+    color: var(--error);
+}
+
+.warning {
+    color: var(--warning);
+}
+
+.success {
+    color: var(--success);
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.header h1 {
+    margin: 0;
+}
+
+.theme-toggle {
+    padding: .4rem .65rem;
+    font-size: 1.1rem;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+    <h1>Receipt Importer</h1>
+    <button
+        type="button"
+        class="theme-toggle"
+        id="theme-toggle"
+        aria-label="Toggle dark mode"
+        title="Toggle dark mode"
+    >🌙</button>
+</div>
+
+{% block content %}{% endblock %}
+
+<script>
+(function () {
+    const root = document.documentElement;
+    const button = document.getElementById("theme-toggle");
+
+    function updateButton() {
+        const dark = root.dataset.theme === "dark";
+        button.textContent = dark ? "☀️" : "🌙";
+        button.setAttribute(
+            "aria-label",
+            dark ? "Switch to light mode" : "Switch to dark mode"
+        );
+        button.setAttribute(
+            "title",
+            dark ? "Switch to light mode" : "Switch to dark mode"
+        );
+    }
+
+    button.addEventListener("click", function () {
+        const dark = root.dataset.theme === "dark";
+
+        if (dark) {
+            delete root.dataset.theme;
+            localStorage.setItem("theme", "light");
+        } else {
+            root.dataset.theme = "dark";
+            localStorage.setItem("theme", "dark");
+        }
+
+        updateButton();
+    });
+
+    updateButton();
+})();
+</script>
+
+</body>
+</html>

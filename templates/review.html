@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card">
+
+<h2>Receipt review</h2>
+
+<p>
+<strong>{{ metadata.store_name }}</strong><br>
+{{ metadata.address }}
+</p>
+
+<p>
+{{ metadata.date }}
+{{ metadata.time }}
+· Receipt {{ metadata.receipt_no }}
+· Org {{ metadata.store_org }}
+</p>
+
+{% if grocy_error %}
+<p class="error">
+<strong>Grocy connection error:</strong>
+{{ grocy_error }}
+</p>
+{% endif %}
+
+</div>
+
+<div class="card">
+
+<form action="/receipt/{{ receipt_id }}/import" method="post" id="import-form">
+
+<table>
+
+<tr>
+    <th>Import</th>
+    <th>Article number</th>
+    <th>Description</th>
+    <th>Qty</th>
+    <th>Gross</th>
+    <th>Discount</th>
+    <th>Net</th>
+    <th>Grocy product</th>
+</tr>
+
+{% for item in items %}
+
+<tr>
+
+<td>
+{% if item.kind == "product" %}
+<input
+    type="checkbox"
+    name="include_{{ loop.index0 }}"
+    {% if item.grocy_product_id %}checked{% endif %}
+>
+{% else %}
+—
+{% endif %}
+</td>
+
+<td>{{ item.article_number }}</td>
+
+<td>{{ item.description }}</td>
+
+<td>
+{{ item.quantity }}
+{{ item.unit }}
+</td>
+
+<td class="money">{{ item.gross }}</td>
+
+<td class="money">{{ item.discount }}</td>
+
+<td class="money">
+<strong>{{ item.net }}</strong>
+</td>
+
+<td>
+
+{% if item.grocy_product_id %}
+
+<strong>{{ item.grocy_product_name }}</strong>
+
+{% elif item.kind == "product" %}
+
+<input
+    type="hidden"
+    id="mapping-article-{{ loop.index0 }}"
+    value="{{ item.article_number }}"
+>
+
+<select id="mapping-product-{{ loop.index0 }}">
+<option value="">Choose product…</option>
+
+{% for product in products|sort(attribute="name") %}
+<option value="{{ product.id }}">{{ product.name }}</option>
+{% endfor %}
+
+</select>
+
+<button
+    type="button"
+    onclick="linkProduct({{ loop.index0 }})"
+>
+Link
+</button>
+
+{% else %}
+
+<span class="small">Ignored</span>
+
+{% endif %}
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+<br>
+
+<button type="submit">
+Import selected items into Grocy
+</button>
+
+</form>
+
+</div>
+
+<script>
+
+async function linkProduct(index) {
+    const article = document.getElementById(
+        `mapping-article-${index}`
+    ).value;
+
+    const product = document.getElementById(
+        `mapping-product-${index}`
+    ).value;
+
+    if (!product) {
+        alert("Choose a Grocy product first.");
+        return;
+    }
+
+    const params = new URLSearchParams({
+        article_number: article,
+        grocy_product_id: product
+    });
+
+    const response = await fetch(
+        `/receipt/{{ receipt_id }}/mapping?${params.toString()}`,
+        { method: "POST" }
+    );
+
+    if (!response.ok) {
+        alert("Could not link the product.");
+        return;
+    }
+
+    window.location.reload();
+}
+
+</script>
+
+{% endblock %}

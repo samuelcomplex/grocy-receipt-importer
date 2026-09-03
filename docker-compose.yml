@@ -1,0 +1,13 @@
+services:
+  grocy-receipt-importer:
+    build:
+      context: .
+    container_name: grocy-receipt-importer
+    env_file:
+      - .env
+    ports:
+      - "9284:8000"
+    volumes:
+      - ./data:/data
+      - ./plugins:/app/plugins:ro
+    restart: unless-stopped
