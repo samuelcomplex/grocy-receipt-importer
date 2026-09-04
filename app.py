@@ -359,6 +359,167 @@ async def set_language(request: Request, language: str = Form(...)):
     return response
 
 
+@app.post("/receipt/{receipt_id}/item/{item_index}/undo")
+async def undo_import(
+    request: Request,
+    receipt_id: str,
+    item_index: int,
+):
+    con = db()
+
+    row = con.execute(
+        "SELECT * FROM receipts WHERE id = ?",
+        (receipt_id,),
+    ).fetchone()
+
+    if not row:
+        con.close()
+        return HTMLResponse("Receipt not found", status_code=404)
+
+    items = json.loads(row["items_json"])
+
+    if item_index < 0 or item_index >= len(items):
+        con.close()
+        return HTMLResponse("Item not found", status_code=404)
+
+    item = items[item_index]
+    transaction_id = item.get("transaction_id")
+
+    if item.get("status") != "Imported" or not transaction_id:
+        con.close()
+        return HTMLResponse(
+            "This import cannot be safely undone.",
+            status_code=400,
+        )
+
+    try:
+        grocy_post(
+            f"/api/stock/transactions/{transaction_id}/undo",
+            {},
+        )
+
+        item["status"] = "Undone"
+        item["undo_transaction_id"] = transaction_id
+        item.pop("transaction_id", None)
+        item.pop("error", None)
+
+        remaining_statuses = {item.get("status") for item in items}
+
+        if remaining_statuses and remaining_statuses <= {"Undone"}:
+            receipt_status = "undone"
+        elif "Imported" in remaining_statuses:
+            receipt_status = "partial"
+        else:
+            receipt_status = "partial"
+
+        con.execute(
+            """
+            UPDATE receipts
+            SET items_json = ?,
+                status = ?
+            WHERE id = ?
+            """,
+            (
+                json.dumps(items, ensure_ascii=False),
+                receipt_status,
+                receipt_id,
+            ),
+        )
+        con.commit()
+
+    except Exception as exc:
+        item["error"] = f"Undo failed: {exc}"
+
+        con.execute(
+            "UPDATE receipts SET items_json = ? WHERE id = ?",
+            (
+                json.dumps(items, ensure_ascii=False),
+                receipt_id,
+            ),
+        )
+        con.commit()
+        con.close()
+
+        return HTMLResponse(
+            f"Undo failed: {exc}",
+            status_code=502,
+        )
+
+    con.close()
+
+    return RedirectResponse(
+        f"/receipt/{receipt_id}",
+        status_code=303,
+    )
+
+
+@app.post("/receipt/{receipt_id}/item/{item_index}/unlink")
+async def unlink_mapping(
+    request: Request,
+    receipt_id: str,
+    item_index: int,
+):
+    con = db()
+
+    row = con.execute(
+        "SELECT * FROM receipts WHERE id = ?",
+        (receipt_id,),
+    ).fetchone()
+
+    if not row:
+        con.close()
+        return HTMLResponse("Receipt not found", status_code=404)
+
+    metadata = json.loads(row["metadata_json"])
+    items = json.loads(row["items_json"])
+
+    if item_index < 0 or item_index >= len(items):
+        con.close()
+        return HTMLResponse("Item not found", status_code=404)
+
+    item = items[item_index]
+    article_number = item.get("article_number")
+
+    if not article_number or not item.get("grocy_product_id"):
+        con.close()
+        return HTMLResponse(
+            "This item does not have a saved mapping.",
+            status_code=400,
+        )
+
+    con.execute(
+        """
+        DELETE FROM mappings
+        WHERE store_org = ?
+          AND article_number = ?
+        """,
+        (
+            metadata.get("store_org", ""),
+            article_number,
+        ),
+    )
+
+    item.pop("grocy_product_id", None)
+    item.pop("grocy_product_name", None)
+    item.pop("match_type", None)
+    item.pop("match_score", None)
+
+    con.execute(
+        "UPDATE receipts SET items_json = ? WHERE id = ?",
+        (
+            json.dumps(items, ensure_ascii=False),
+            receipt_id,
+        ),
+    )
+    con.commit()
+    con.close()
+
+    return RedirectResponse(
+        f"/receipt/{receipt_id}",
+        status_code=303,
+    )
+
+
 @app.post("/receipt/{receipt_id}/delete")
 async def delete_receipt(
     request: Request,
@@ -549,6 +710,7 @@ def review(
         products = []
         grocy_error = str(exc)
 
+
     return render_template(
         request,
         "review.html",
@@ -634,30 +796,6 @@ async def import_receipt(
 
         article_number = item.get("article_number")
 
-        if article_number:
-            con.execute(
-                """
-                INSERT OR REPLACE INTO mappings (
-                    store_org,
-                    article_number,
-                    grocy_product_id,
-                    grocy_product_name,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    metadata.get("store_org", ""),
-                    article_number,
-                    int(selected_product_id),
-                    product_name,
-                    datetime.now().isoformat(timespec="seconds"),
-                ),
-            )
-
-            item["grocy_product_id"] = int(selected_product_id)
-            item["grocy_product_name"] = product_name
-
         try:
             amount = quantity(item["quantity"])
             net_price = money(item["net"])
@@ -673,12 +811,57 @@ async def import_receipt(
                 ),
             }
 
-            grocy_post(
+            stock_entries = grocy_post(
                 f"/api/stock/products/{selected_product_id}/add",
                 payload,
             )
 
+            # Grocy 4.x returns an array of StockLogEntry objects.
+            # Every entry belonging to this purchase has the transaction_id
+            # that can later be passed to the transaction undo endpoint.
+            transaction_ids = {
+                str(entry["transaction_id"])
+                for entry in stock_entries
+                if entry.get("transaction_id")
+            }
+
+            if len(transaction_ids) != 1:
+                raise RuntimeError(
+                    "Grocy imported the item but returned an unexpected "
+                    "number of transaction IDs; undo is unavailable."
+                )
+
+            transaction_id = transaction_ids.pop()
+
             item["status"] = "Imported"
+            item["grocy_product_id"] = int(selected_product_id)
+            item["grocy_product_name"] = product_name
+            item["transaction_id"] = str(transaction_id)
+            item.pop("error", None)
+
+            # Only persist the article mapping after the stock transaction
+            # succeeded. A failed import must never create a saved mapping.
+            if article_number:
+                con.execute(
+                    """
+                    INSERT OR REPLACE INTO mappings (
+                        store_org,
+                        article_number,
+                        grocy_product_id,
+                        grocy_product_name,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        metadata.get("store_org", ""),
+                        article_number,
+                        int(selected_product_id),
+                        product_name,
+                        datetime.now().isoformat(timespec="seconds"),
+                    ),
+                )
+
             imported += 1
 
         except Exception as exc:

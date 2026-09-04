@@ -10,6 +10,26 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 - Coop receipt parser plugin (`plugins/coop.py`), ported from the standalone `receipt-import-coop` project.
 
+## [0.2.5] - 2026-09-04
+
+### Added
+
+- Undo imported Grocy transactions directly from the receipt review.
+- Unlink saved article-number mappings from the receipt review.
+- English and Swedish translations for the new review actions and statuses.
+
+### Changed
+
+- Receipt units are treated as retailer metadata and no longer require Grocy quantity-unit conversions for import.
+- The receipt review shows import failures directly on the affected item.
+- The import checkbox is disabled when **Skip Product** is selected.
+- Unlinking a saved mapping uses a dedicated link icon with a hover tooltip.
+- Previously imported items retain their protected state and cannot be imported again.
+
+### Fixed
+
+- Prevented unlink and undo actions from accidentally submitting the main receipt import form.
+
 ## [0.2.0] - 2026-09-04
 
 ### Added
