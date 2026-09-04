@@ -238,6 +238,13 @@ Do not commit:
 
 If you discover a security issue, please report it privately rather than opening a public issue with sensitive details.
 
+## What's new in 0.2.5
+
+- Undo imported Grocy transactions directly from the receipt review.
+- Unlink saved product mappings from the receipt review.
+- Receipt units no longer require Grocy quantity-unit conversions.
+- Import failures are shown directly on the affected receipt item.
+
 ## License
 
 This project is licensed under the MIT License.
