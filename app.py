@@ -23,6 +23,38 @@ GROCY_BASE_URL = os.environ.get("GROCY_BASE_URL", "http://grocy").rstrip("/")
 GROCY_API_KEY = os.environ.get("GROCY_API_KEY", "")
 DB_PATH = "/data/receipts.sqlite3"
 
+# Receipt parsers emit short unit abbreviations (Swedish "st"/"stk", "kg",
+# "g", "l", "ml"). Grocy quantity units are free-text names configured by
+# the user (e.g. "Piece (Styck)", "Kilogram (kg)") and rarely match those
+# abbreviations verbatim, so unit matching is done by alias rather than
+# exact string equality.
+UNIT_ALIASES = {
+    "st": ("st", "stk", "styck", "pcs", "piece"),
+    "stk": ("st", "stk", "styck", "pcs", "piece"),
+    "kg": ("kg", "kilogram"),
+    "g": ("g", "gram"),
+    "l": ("l", "liter", "litre"),
+    "ml": ("ml", "milliliter", "millilitre"),
+}
+
+
+def unit_matches(receipt_unit: str, grocy_unit_name: str) -> bool:
+    receipt_unit = receipt_unit.strip().lower()
+    grocy_unit_name = grocy_unit_name.strip().lower()
+
+    if not receipt_unit or not grocy_unit_name:
+        return False
+
+    if receipt_unit == grocy_unit_name:
+        return True
+
+    aliases = UNIT_ALIASES.get(receipt_unit)
+    if not aliases:
+        return False
+
+    tokens = re.findall(r"[a-zåäö]+", grocy_unit_name)
+    return any(alias in tokens for alias in aliases)
+
 TRANSLATIONS_DIR = Path(__file__).parent / "translations"
 DEFAULT_LANGUAGE = "en"
 
@@ -628,6 +660,7 @@ async def import_receipt(
 
         if not product_name:
             item["status"] = "Failed"
+            item["error"] = grocy_error or "Selected Grocy product not found."
             failed += 1
             continue
 
@@ -685,10 +718,10 @@ async def import_receipt(
                 )
             )
 
-            if receipt_unit == stock_unit:
+            if unit_matches(receipt_unit, stock_unit):
                 stock_amount = amount
 
-            elif receipt_unit == purchase_unit:
+            elif unit_matches(receipt_unit, purchase_unit):
                 stock_amount = amount * factor
 
             else:
@@ -718,8 +751,9 @@ async def import_receipt(
             item["status"] = "Imported"
             imported += 1
 
-        except Exception:
+        except Exception as exc:
             item["status"] = "Failed"
+            item["error"] = str(exc)
             failed += 1
 
     con.execute(
