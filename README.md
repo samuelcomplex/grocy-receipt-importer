@@ -1,6 +1,6 @@
 # Grocy Receipt Importer
 
-**Version 0.2.0**
+**Version 0.2.5**
 
 A self-hosted web application that extracts receipt data from PDF files, lets you review and map products, and imports selected items into [Grocy](https://grocy.info/).
 
@@ -221,7 +221,7 @@ The project follows [Semantic Versioning](https://semver.org/):
 MAJOR.MINOR.PATCH
 ```
 
-The current release is **v0.2.0**.
+The current release is **v0.2.5**.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
