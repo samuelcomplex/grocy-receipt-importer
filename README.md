@@ -37,6 +37,14 @@ ICA receipt parsing is currently supported through:
 plugins/ica.py
 ```
 
+### Coop
+
+Coop receipt parsing is currently supported through:
+
+```text
+plugins/coop.py
+```
+
 Additional retailers can be added as plugins.
 
 ## Requirements
