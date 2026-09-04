@@ -75,7 +75,9 @@
     {% elif item.status == 'Failed' %}status-failed
     {% elif item.status == 'Skipped' %}status-skipped
     {% endif %}
-">
+"
+{% if item.status == "Failed" and item.error %}title="{{ item.error }}"{% endif %}
+>
 {% if item.status == "Imported" %}
     {{ t("status.imported") }}
 {% elif item.status == "Failed" %}
