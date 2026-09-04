@@ -4,6 +4,12 @@ All notable changes to Grocy Receipt Importer are documented here.
 
 The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Coop receipt parser plugin (`plugins/coop.py`), ported from the standalone `receipt-import-coop` project.
+
 ## [0.2.0] - 2026-09-04
 
 ### Added
