@@ -167,6 +167,19 @@ def grocy_post(path, payload):
     return response.json()
 
 
+def grocy_post_no_content(path, payload):
+    response = requests.post(
+        GROCY_BASE_URL + path,
+        headers={
+            **headers(),
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=20,
+    )
+    response.raise_for_status()
+
+
 def extract_pdf_text(pdf_data):
     reader = PdfReader(io.BytesIO(pdf_data))
 
@@ -393,7 +406,7 @@ async def undo_import(
         )
 
     try:
-        grocy_post(
+        grocy_post_no_content(
             f"/api/stock/transactions/{transaction_id}/undo",
             {},
         )

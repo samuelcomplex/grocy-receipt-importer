@@ -185,10 +185,12 @@
 <button
     type="submit"
     formaction="/receipt/{{ receipt_id }}/item/{{ loop.index0 }}/undo"
-    class="secondary-button"
+    class="undo-button"
+    title="{{ t('ui.undo_import') }}"
+    aria-label="{{ t('ui.undo_import') }}"
     onclick="return confirm('{{ t("ui.undo_import_confirm") }}');"
 >
-    {{ t("ui.undo_import") }}
+    ↶
 </button>
 {% endif %}
 
@@ -328,6 +330,7 @@ document.querySelectorAll("select[data-include-checkbox]").forEach(function (sel
             checkbox.checked = false;
             checkbox.disabled = true;
         } else if (!imported) {
+            checkbox.checked = true;
             checkbox.disabled = false;
         }
     }
