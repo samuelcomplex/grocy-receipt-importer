@@ -330,6 +330,7 @@ document.querySelectorAll("select[data-include-checkbox]").forEach(function (sel
             checkbox.checked = false;
             checkbox.disabled = true;
         } else if (!imported) {
+            checkbox.checked = true;
             checkbox.disabled = false;
         }
     }
