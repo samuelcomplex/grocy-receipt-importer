@@ -18,6 +18,15 @@ QTY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# pypdf's text extraction can reorder the "x" separator to the front of the
+# line for this receipt layout, e.g. "2 STK x 15,10" comes out as
+# "x 2 STK 15,10". Matched as a fallback alongside QTY_RE.
+QTY_RE_LEADING_X = re.compile(
+    r"^[xX]\s*(?P<quantity>\d+(?:[.,]\d+)?)\s*(?P<unit>STK|st|kg)\s*"
+    r"(?P<unit_price>[\d.]*\d,\d{2})$",
+    re.IGNORECASE,
+)
+
 TOTAL_RE = re.compile(r"^Total SEK\s+([\d.]*\d,\d{2})$")
 
 DEPOSIT_PREFIXES = ("PANT",)
@@ -118,7 +127,7 @@ class CoopParser(ReceiptParser):
         items = []
 
         for line in item_lines:
-            qty_match = QTY_RE.match(line)
+            qty_match = QTY_RE.match(line) or QTY_RE_LEADING_X.match(line)
 
             if qty_match and items:
                 unit_price = money(qty_match.group("unit_price"))
