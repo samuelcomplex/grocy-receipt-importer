@@ -193,116 +193,6 @@ DISCOUNT_RE = re.compile(
 )
 
 
-def normalize_unit_name(value):
-    """Normalize a receipt/Grocy quantity-unit name for comparison."""
-    if value is None:
-        return ""
-    return " ".join(str(value).strip().lower().split())
-
-
-def load_grocy_quantity_units():
-    """Load quantity units from the current Grocy instance."""
-    units = grocy_get("/api/objects/quantity_units")
-    result = {}
-
-    for unit in units:
-        unit_id = unit.get("id")
-        if unit_id is None:
-            continue
-
-        names = {
-            normalize_unit_name(unit.get("name")),
-            normalize_unit_name(unit.get("name_plural")),
-        }
-
-        for name in names:
-            if name:
-                result[name] = unit_id
-
-    # Retailer receipts may use "stk" while Grocy may use "st",
-    # or vice versa. The actual ID always comes from this Grocy instance.
-    if "stk" in result and "st" not in result:
-        result["st"] = result["stk"]
-    elif "st" in result and "stk" not in result:
-        result["stk"] = result["st"]
-
-    return result
-
-
-def resolve_receipt_unit_id(receipt_unit, quantity_units):
-    """Resolve a receipt unit name to the current Grocy quantity-unit ID."""
-    return quantity_units.get(normalize_unit_name(receipt_unit))
-
-
-def get_product_stock_quantity_unit(product_id):
-    """Return the selected product's stock quantity-unit ID and name."""
-    details = grocy_get(f"/api/stock/products/{product_id}")
-
-    quantity_unit_stock = details.get("quantity_unit_stock") or {}
-    stock_unit_id = quantity_unit_stock.get("id")
-    stock_unit_name = quantity_unit_stock.get("name")
-
-    if stock_unit_id is None or not stock_unit_name:
-        raise ValueError("Grocy product has no stock quantity unit")
-
-    return stock_unit_id, stock_unit_name
-
-
-def convert_receipt_quantity_to_stock(
-    product_id,
-    amount,
-    receipt_unit,
-    quantity_units,
-    conversions,
-):
-    """
-    Convert a receipt quantity into the matched product's stock unit.
-
-    Receipt units are resolved against the current Grocy instance.
-    Conversion factors are product-specific and come from
-    quantity_unit_conversions_resolved.
-    """
-    from_qu_id = resolve_receipt_unit_id(receipt_unit, quantity_units)
-
-    if from_qu_id is None:
-        raise ValueError(
-            f"Receipt unit '{receipt_unit}' is not configured in Grocy"
-        )
-
-    stock_unit_id, stock_unit_name = get_product_stock_quantity_unit(product_id)
-
-    if from_qu_id == stock_unit_id:
-        return amount, stock_unit_name, Decimal("1")
-
-    matching = [
-        conversion
-        for conversion in conversions
-        if conversion.get("product_id") == int(product_id)
-        and conversion.get("from_qu_id") == from_qu_id
-        and conversion.get("to_qu_id") == stock_unit_id
-    ]
-
-    if not matching:
-        raise ValueError(
-            f"No conversion from '{receipt_unit}' to "
-            f"'{stock_unit_name}' for this product"
-        )
-
-    conversion = matching[0]
-
-    try:
-        factor = Decimal(str(conversion["factor"]))
-    except (KeyError, TypeError, ValueError, ArithmeticError):
-        raise ValueError(
-            f"Invalid Grocy conversion from '{receipt_unit}' "
-            f"to '{stock_unit_name}'"
-        )
-
-    stock_amount = amount * factor
-
-    return stock_amount, stock_unit_name, factor
-
-
 def load_products():
     return grocy_get("/api/objects/products")
 
@@ -717,11 +607,6 @@ async def import_receipt(
 
     con = db()
 
-    quantity_units = load_grocy_quantity_units()
-    conversions = grocy_get(
-        "/api/objects/quantity_unit_conversions_resolved"
-    )
-
     for index, item in enumerate(items):
         if item["kind"] != "product":
             item["status"] = "Skipped"
@@ -776,20 +661,8 @@ async def import_receipt(
         try:
             amount = quantity(item["quantity"])
             net_price = money(item["net"])
-            receipt_unit = item["unit"]
-
-            stock_amount, stock_unit, conversion_factor = (
-                convert_receipt_quantity_to_stock(
-                    selected_product_id,
-                    amount,
-                    receipt_unit,
-                    quantity_units,
-                    conversions,
-                )
-            )
-
             payload = {
-                "amount": float(stock_amount),
+                "amount": float(amount),
                 "best_before_date": metadata.get("date") or None,
                 "transaction_type": "purchase",
                 "purchased_date": metadata.get("date") or None,
