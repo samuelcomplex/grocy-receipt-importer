@@ -21,3 +21,5 @@ htmlcov/
 Thumbs.db
 .vscode/
 .idea/
+.venv/
+.test-data/

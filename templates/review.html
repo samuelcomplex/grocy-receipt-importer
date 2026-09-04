@@ -94,8 +94,11 @@
     <input
         type="checkbox"
         name="include_{{ loop.index0 }}"
-        {% if item.status != "Skipped" %}checked{% endif %}
         {% if item.status == "Imported" %}disabled{% endif %}
+        {% if item.status != "Imported"
+              and item.status != "Skipped"
+              and item.grocy_product_id
+              and item.match_type != "suggested" %}checked{% endif %}
     >
 {% else %}
     —
