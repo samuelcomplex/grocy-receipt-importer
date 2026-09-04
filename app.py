@@ -808,8 +808,9 @@ async def import_receipt(
             item["status"] = "Imported"
             imported += 1
 
-        except Exception:
+        except Exception as exc:
             item["status"] = "Failed"
+            item["error"] = str(exc)
             failed += 1
 
     con.execute(

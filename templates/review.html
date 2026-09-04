@@ -107,7 +107,14 @@
 
 <td>{{ item.article_number }}</td>
 
-<td>{{ item.description }}</td>
+<td>
+    {{ item.description }}
+    {% if item.status == "Failed" and item.error %}
+        <div class="text-danger small mt-1">
+            {{ item.error }}
+        </div>
+    {% endif %}
+</td>
 
 <td>
 {{ item.quantity }}
