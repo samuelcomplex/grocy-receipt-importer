@@ -82,6 +82,8 @@
     {{ t("status.failed") }}
 {% elif item.status == "Skipped" %}
     {{ t("status.skipped") }}
+{% elif item.status == "Undone" %}
+    {{ t("status.undone") }}
 {% elif item.kind == "product" %}
     {{ t("ui.ready") }}
 {% else %}
@@ -94,8 +96,13 @@
     <input
         type="checkbox"
         name="include_{{ loop.index0 }}"
-        {% if item.status != "Skipped" %}checked{% endif %}
+        id="include-{{ loop.index0 }}"
+        data-imported="{{ 'true' if item.status == 'Imported' else 'false' }}"
         {% if item.status == "Imported" %}disabled{% endif %}
+        {% if item.status != "Imported"
+              and item.status != "Skipped"
+              and item.grocy_product_id
+              and item.match_type != "suggested" %}checked{% endif %}
     >
 {% else %}
     —
@@ -104,7 +111,14 @@
 
 <td>{{ item.article_number }}</td>
 
-<td>{{ item.description }}</td>
+<td>
+    {{ item.description }}
+    {% if item.status == "Failed" and item.error %}
+        <div class="text-danger small mt-1">
+            {{ item.error }}
+        </div>
+    {% endif %}
+</td>
 
 <td>
 {{ item.quantity }}
@@ -125,7 +139,11 @@
 
 <div class="product-selection">
 
-<select name="product_{{ loop.index0 }}">
+<select
+    name="product_{{ loop.index0 }}"
+    id="product-{{ loop.index0 }}"
+    data-include-checkbox="include-{{ loop.index0 }}"
+>
 
 <option value="">{{ t("ui.skip_item") }}</option>
 
@@ -163,6 +181,17 @@
 
 </select>
 
+{% if item.status == "Imported" and item.transaction_id %}
+<button
+    type="submit"
+    formaction="/receipt/{{ receipt_id }}/item/{{ loop.index0 }}/undo"
+    class="secondary-button"
+    onclick="return confirm('{{ t("ui.undo_import_confirm") }}');"
+>
+    {{ t("ui.undo_import") }}
+</button>
+{% endif %}
+
 {% if item.grocy_product_id %}
 <span
     class="mapping-indicator mapping-saved"
@@ -181,6 +210,25 @@
     title="{{ t('ui.no_matching_product') }}"
     aria-label="{{ t('ui.no_matching_product') }}"
 >!</span>
+{% endif %}
+
+{% if item.grocy_product_id and item.match_type == "saved" %}
+<button
+    type="submit"
+    formaction="/receipt/{{ receipt_id }}/item/{{ loop.index0 }}/unlink"
+    class="unlink-button"
+    title="{{ t('ui.unlink_mapping') }}"
+    aria-label="{{ t('ui.unlink_mapping') }}"
+    onclick="return confirm('{{ t("ui.unlink_mapping_confirm") }}');"
+>
+    🔗
+</button>
+{% endif %}
+
+{% if item.match_type == "suggested" and item.match_score %}
+<div class="small text-muted">
+    {{ t("ui.match_confidence") }}: {{ (item.match_score * 100)|round|int }}%
+</div>
 {% endif %}
 
 </div>
@@ -262,6 +310,31 @@
 <script>
 const anotherFile = document.getElementById("another-file");
 const anotherFileButton = document.getElementById("another-file-button");
+
+document.querySelectorAll("select[data-include-checkbox]").forEach(function (select) {
+    const checkbox = document.getElementById(
+        select.dataset.includeCheckbox
+    );
+
+    if (!checkbox) {
+        return;
+    }
+
+    function updateCheckbox() {
+        const skipSelected = select.value === "";
+        const imported = checkbox.dataset.imported === "true";
+
+        if (skipSelected) {
+            checkbox.checked = false;
+            checkbox.disabled = true;
+        } else if (!imported) {
+            checkbox.disabled = false;
+        }
+    }
+
+    select.addEventListener("change", updateCheckbox);
+    updateCheckbox();
+});
 
 anotherFileButton.addEventListener("click", function (event) {
     if (!anotherFile.files.length) {
