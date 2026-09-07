@@ -136,15 +136,31 @@
 
 {% if item.kind == "product" %}
 
-<div class="product-selection">
+<div
+    class="product-selection"
+    {% if item.unit %}data-receipt-unit="{{ item.unit }}"{% endif %}
+    {% if item.new_product_config %}
+    data-new-product-name="{{ item.new_product_config.name }}"
+    data-staged-purchase-unit="{{ item.new_product_config.purchase_unit_id }}"
+    data-staged-stock-unit="{{ item.new_product_config.stock_unit_id }}"
+    data-staged-location="{{ item.new_product_config.location_id }}"
+    data-staged-conversion-factor="{{ item.new_product_config.conversion_factor }}"
+    {% endif %}
+>
 
 <select
     name="product_{{ loop.index0 }}"
     id="product-{{ loop.index0 }}"
     data-include-checkbox="include-{{ loop.index0 }}"
 >
-
+{% if item.new_product_config %}
+<option value="new" selected>
+    ✨ New product — configure
+</option>
+{% else %}
 <option value="">{{ t("ui.skip_item") }}</option>
+<option value="new">{{ t("ui.create_new_product") }}</option>
+{% endif %}
 
 {% if item.grocy_product_id %}
 
@@ -179,6 +195,105 @@
 {% endfor %}
 
 </select>
+
+<button
+    type="button"
+    class="secondary-button configure-new-product-button"
+    data-item-index="{{ loop.index0 }}"
+    {% if not item.new_product_config %}hidden{% endif %}
+>
+    {% if item.new_product_config %}
+        ✨ Reconfigure new product
+    {% else %}
+        ✨ Configure new product
+    {% endif %}
+</button>
+
+{% set selected_existing_product_id = item.grocy_product_id or item.suggested_grocy_product_id %}
+{% set unit_info = product_unit_options.get(selected_existing_product_id|string) if selected_existing_product_id else None %}
+{% if unit_info %}
+<div class="existing-product-units">
+    <div class="small">
+        <strong>{{ t("ui.purchase_unit") }}:</strong>
+        {{ unit_info.purchase_unit_name or unit_info.purchase_unit_id }}
+        ·
+        <strong>{{ t("ui.stock_unit") }}:</strong>
+        {{ unit_info.stock_unit_name or unit_info.stock_unit_id }}
+    </div>
+
+    {% if unit_info.purchase_unit_id != unit_info.stock_unit_id %}
+        {% if unit_info.has_purchase_to_stock_conversion %}
+        <div class="small">
+            1 {{ unit_info.purchase_unit_name or unit_info.purchase_unit_id }}
+            =
+            {{ unit_info.conversion_factor }}
+            {{ unit_info.stock_unit_name or unit_info.stock_unit_id }}
+        </div>
+        {% else %}
+        <div class="small text-danger">
+            No purchase-to-stock conversion configured for this product.
+        </div>
+        {% endif %}
+    {% endif %}
+</div>
+
+<div class="existing-product-import-unit">
+    <label for="import-unit-{{ loop.index0 }}">
+        {{ t("ui.import_unit") }}
+    </label>
+    <select
+        name="import_unit_{{ loop.index0 }}"
+        id="import-unit-{{ loop.index0 }}"
+    >
+        <option value="{{ unit_info.purchase_unit_id }}"
+            {% if not unit_info.has_purchase_to_stock_conversion and unit_info.purchase_unit_id != unit_info.stock_unit_id %}
+            disabled
+            {% else %}
+            selected
+            {% endif %}
+        >
+            {{ unit_info.purchase_unit_name or unit_info.purchase_unit_id }}
+        </option>
+
+        {% if unit_info.stock_unit_id != unit_info.purchase_unit_id %}
+        <option value="{{ unit_info.stock_unit_id }}">
+            {{ unit_info.stock_unit_name or unit_info.stock_unit_id }}
+        </option>
+        {% endif %}
+    </select>
+</div>
+{% endif %}
+
+{% if item.new_product_config %}
+<div class="new-product-staged">
+    <span class="new-product-staged-icon">✨</span>
+    <div>
+        <strong>New product — will be created on import</strong>
+        <div class="new-product-staged-details">
+            {{ item.new_product_config.name }}
+            · {{ item.new_product_config.purchase_unit_name }}
+            → {{ item.new_product_config.stock_unit_name }}
+            {% if item.new_product_config.purchase_unit_id != item.new_product_config.stock_unit_id %}
+                · 1 = {{ item.new_product_config.conversion_factor }}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if item.new_product_status == "error" %}
+<div class="new-product-status new-product-status-failed">
+    New product configuration failed: {{ item.new_product_error }}
+</div>
+{% elif item.create_product_status == "failed" %}
+<div class="new-product-status new-product-status-failed">
+    Creation/import failed: {{ item.create_product_error }}
+</div>
+{% elif item.create_product_status == "success" %}
+<div class="new-product-status new-product-status-success">
+    Product created and imported successfully.
+</div>
+{% endif %}
 
 {% if item.status == "Imported" and item.transaction_id %}
 <button
@@ -308,6 +423,276 @@
 
 </div>
 
+<div id="new-product-modal" class="new-product-modal" hidden>
+    <div
+        class="new-product-modal-window"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-product-modal-title"
+    >
+        <div class="new-product-modal-header">
+            <h2 id="new-product-modal-title">
+                Configure new product
+            </h2>
+            <button
+                type="button"
+                class="new-product-modal-close"
+                id="new-product-modal-close"
+                aria-label="Close"
+            >
+                ×
+            </button>
+        </div>
+
+        <form id="new-product-modal-form">
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-name">
+                    {{ t("ui.product_name") }}
+                </label>
+                <input
+                    type="text"
+                    id="modal-new-product-name"
+                    name="name"
+                    required
+                >
+            </div>
+
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-location">
+                    {{ t("ui.location") }}
+                </label>
+                <select
+                    id="modal-new-product-location"
+                    name="location_id"
+                    required
+                >
+                    {% for location in locations|sort(attribute="name") %}
+                    <option value="{{ location.id }}">
+                        {{ location.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-purchase-unit">
+                    {{ t("ui.purchase_unit") }}
+                </label>
+                <select
+                    id="modal-new-product-purchase-unit"
+                    name="purchase_unit_id"
+                    required
+                >
+                    {% for unit in quantity_units|sort(attribute="name") %}
+                    <option value="{{ unit.id }}">
+                        {{ unit.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-stock-unit">
+                    {{ t("ui.stock_unit") }}
+                </label>
+                <select
+                    id="modal-new-product-stock-unit"
+                    name="stock_unit_id"
+                    required
+                >
+                    {% for unit in quantity_units|sort(attribute="name") %}
+                    <option value="{{ unit.id }}">
+                        {{ unit.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div
+                id="modal-new-product-conversion"
+                class="new-product-modal-conversion"
+                hidden
+            >
+                <label for="modal-new-product-conversion-factor">
+                    {{ t("ui.conversion") }}
+                </label>
+
+                <div class="conversion-expression">
+                    <span>1</span>
+                    <span id="modal-conversion-purchase-unit"></span>
+                    <span>=</span>
+                    <input
+                        type="number"
+                        id="modal-new-product-conversion-factor"
+                        name="conversion_factor"
+                        value="1"
+                        min="0.000001"
+                        step="any"
+                    >
+                    <span id="modal-conversion-stock-unit"></span>
+                </div>
+            </div>
+
+            <div
+                id="new-product-modal-error"
+                class="new-product-modal-error"
+                hidden
+            ></div>
+
+            <div class="new-product-modal-actions">
+                <button
+                    type="button"
+                    class="secondary-button"
+                    id="new-product-modal-cancel"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    class="primary-button"
+                    id="new-product-modal-submit"
+                >
+                    Configure product
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.new-product-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.new-product-modal[hidden] {
+    display: none;
+}
+
+.new-product-modal-window {
+    width: min(600px, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 1.25rem;
+    border-radius: 8px;
+    background: var(--background-color, #fff);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.new-product-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.new-product-modal-header h2 {
+    margin: 0;
+}
+
+.new-product-modal-close {
+    border: 0;
+    background: transparent;
+    font-size: 1.75rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.new-product-modal-field {
+    display: grid;
+    gap: 0.35rem;
+    margin-bottom: 1rem;
+}
+
+.new-product-modal-field input,
+.new-product-modal-field select {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.new-product-modal-conversion {
+    margin-bottom: 1rem;
+}
+
+.conversion-expression {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.conversion-expression input {
+    width: 8rem;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.new-product-modal-error {
+    margin: 1rem 0;
+    padding: 0.75rem;
+    border-radius: 6px;
+    background: #fce8e6;
+    color: #a50e0e;
+}
+
+.new-product-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.configure-new-product-button {
+    margin-top: 0.5rem;
+}
+
+.new-product-staged {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid #b8860b;
+    border-radius: 6px;
+    background: #fff8dc;
+}
+
+.new-product-staged-icon {
+    flex: 0 0 auto;
+}
+
+.new-product-staged-details {
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+}
+
+.new-product-status {
+    margin-top: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 6px;
+}
+
+.new-product-status-failed {
+    background: #fce8e6;
+    color: #a50e0e;
+}
+
+.new-product-status-success {
+    background: #e6f4ea;
+    color: #137333;
+}
+</style>
+
 <script>
 const anotherFile = document.getElementById("another-file");
 const anotherFileButton = document.getElementById("another-file-button");
@@ -338,6 +723,316 @@ document.querySelectorAll("select[data-include-checkbox]").forEach(function (sel
     updateCheckbox();
 });
 
+document.querySelectorAll("select[id^=\"product-\"]").forEach(function (select) {
+    const index = select.id.replace("product-", "");
+    const row = select.closest(".product-selection");
+
+    if (!row) {
+        return;
+    }
+
+    const configureButton = row.querySelector(
+        ".configure-new-product-button"
+    );
+
+    function updateNewProductUI() {
+        if (!configureButton) {
+            return;
+        }
+
+        configureButton.hidden = select.value !== "new";
+    }
+
+    select.addEventListener("change", function () {
+        if (select.value === "new") {
+            openNewProductModal(index, select);
+        }
+
+        updateNewProductUI();
+    });
+
+    updateNewProductUI();
+});
+
+const newProductModal = document.getElementById("new-product-modal");
+const newProductModalForm = document.getElementById("new-product-modal-form");
+const newProductModalError = document.getElementById("new-product-modal-error");
+const newProductModalTitle = document.getElementById("new-product-modal-title");
+
+let activeNewProductIndex = null;
+let activeProductSelect = null;
+let previousProductValue = "";
+
+function setNewProductModalError(message) {
+    newProductModalError.textContent = message || "";
+    newProductModalError.hidden = !message;
+}
+
+function selectUnitByReceiptUnit(select, receiptUnit) {
+    if (!receiptUnit) {
+        return;
+    }
+
+    const wanted = receiptUnit.trim().toLowerCase();
+
+    for (const option of select.options) {
+        if (option.textContent.trim().toLowerCase() === wanted) {
+            select.value = option.value;
+            return;
+        }
+    }
+}
+
+function updateNewProductConversion() {
+    const purchaseUnit = document.getElementById(
+        "modal-new-product-purchase-unit"
+    );
+    const stockUnit = document.getElementById(
+        "modal-new-product-stock-unit"
+    );
+    const conversion = document.getElementById(
+        "modal-new-product-conversion"
+    );
+    const purchaseLabel = document.getElementById(
+        "modal-conversion-purchase-unit"
+    );
+    const stockLabel = document.getElementById(
+        "modal-conversion-stock-unit"
+    );
+
+    const purchaseOption =
+        purchaseUnit.options[purchaseUnit.selectedIndex];
+    const stockOption =
+        stockUnit.options[stockUnit.selectedIndex];
+
+    purchaseLabel.textContent = purchaseOption
+        ? purchaseOption.textContent.trim()
+        : "";
+
+    stockLabel.textContent = stockOption
+        ? stockOption.textContent.trim()
+        : "";
+
+    const differentUnits =
+        purchaseUnit.value !== stockUnit.value;
+
+    conversion.hidden = !differentUnits;
+
+    if (!differentUnits) {
+        document.getElementById(
+            "modal-new-product-conversion-factor"
+        ).value = "1";
+    }
+}
+
+function openNewProductModal(index, productSelect) {
+    activeNewProductIndex = index;
+    activeProductSelect = productSelect;
+    previousProductValue =
+        productSelect.dataset.previousValue || "";
+
+    const row = productSelect.closest(".product-selection");
+
+    const nameInput = document.getElementById(
+        "modal-new-product-name"
+    );
+    const locationSelect = document.getElementById(
+        "modal-new-product-location"
+    );
+    const purchaseUnit = document.getElementById(
+        "modal-new-product-purchase-unit"
+    );
+    const stockUnit = document.getElementById(
+        "modal-new-product-stock-unit"
+    );
+
+    nameInput.value = row && row.dataset.newProductName
+        ? row.dataset.newProductName
+        : "";
+
+    const receiptUnit = row
+        ? row.dataset.receiptUnit
+        : "";
+
+    selectUnitByReceiptUnit(purchaseUnit, receiptUnit);
+    stockUnit.value = purchaseUnit.value;
+
+    const stagedPurchase = row
+        ? row.dataset.stagedPurchaseUnit
+        : "";
+    const stagedStock = row
+        ? row.dataset.stagedStockUnit
+        : "";
+    const stagedLocation = row
+        ? row.dataset.stagedLocation
+        : "";
+    const stagedFactor = row
+        ? row.dataset.stagedConversionFactor
+        : "";
+
+    if (stagedPurchase) {
+        purchaseUnit.value = stagedPurchase;
+    }
+
+    if (stagedStock) {
+        stockUnit.value = stagedStock;
+    } else {
+        stockUnit.value = purchaseUnit.value;
+    }
+
+    if (stagedLocation) {
+        locationSelect.value = stagedLocation;
+    }
+
+    if (stagedFactor) {
+        document.getElementById(
+            "modal-new-product-conversion-factor"
+        ).value = stagedFactor;
+    } else {
+        document.getElementById(
+            "modal-new-product-conversion-factor"
+        ).value = "1";
+    }
+
+    newProductModalTitle.textContent =
+        "Configure new product";
+
+    setNewProductModalError("");
+    updateNewProductConversion();
+
+    newProductModal.hidden = false;
+    document.getElementById("modal-new-product-name").focus();
+}
+
+function closeNewProductModal(cancelled = true) {
+    if (cancelled && activeProductSelect) {
+        activeProductSelect.value = previousProductValue;
+        activeProductSelect.dataset.previousValue =
+            previousProductValue;
+        activeProductSelect.dispatchEvent(new Event("change"));
+    }
+
+    newProductModal.hidden = true;
+    setNewProductModalError("");
+    activeNewProductIndex = null;
+    activeProductSelect = null;
+}
+
+document.querySelectorAll(
+    ".configure-new-product-button"
+).forEach(function (button) {
+    button.addEventListener("click", function () {
+        const index = button.dataset.itemIndex;
+        const select = document.getElementById(
+            "product-" + index
+        );
+
+        if (select) {
+            openNewProductModal(index, select);
+        }
+    });
+});
+
+document.getElementById(
+    "new-product-modal-close"
+).addEventListener("click", function () {
+    closeNewProductModal(true);
+});
+
+document.getElementById(
+    "new-product-modal-cancel"
+).addEventListener("click", function () {
+    closeNewProductModal(true);
+});
+
+newProductModal.addEventListener("click", function (event) {
+    if (event.target === newProductModal) {
+        closeNewProductModal(true);
+    }
+});
+
+document.getElementById(
+    "modal-new-product-purchase-unit"
+).addEventListener("change", function () {
+    const stockUnit = document.getElementById(
+        "modal-new-product-stock-unit"
+    );
+
+    stockUnit.value = this.value;
+    updateNewProductConversion();
+});
+
+document.getElementById(
+    "modal-new-product-stock-unit"
+).addEventListener("change", updateNewProductConversion);
+
+newProductModalForm.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    if (activeNewProductIndex === null) {
+        return;
+    }
+
+    const submitButton = document.getElementById(
+        "new-product-modal-submit"
+    );
+
+    submitButton.disabled = true;
+    setNewProductModalError("");
+
+    const formData = new FormData(newProductModalForm);
+    formData.set("item_index", activeNewProductIndex);
+
+    try {
+        const response = await fetch(
+            "{{ request.url.path.rsplit('/review', 1)[0] }}/receipt/{{ receipt_id }}/stage-new-product",
+            {
+                method: "POST",
+                body: formData,
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            throw new Error(
+                data.error || "Unable to stage the new product."
+            );
+        }
+
+        activeProductSelect.value = "new";
+        activeProductSelect.dataset.previousValue = "new";
+
+        const checkbox = document.getElementById(
+            "include-" + activeNewProductIndex
+        );
+
+        if (checkbox) {
+            checkbox.checked = true;
+            checkbox.disabled = false;
+        }
+
+        closeNewProductModal(false);
+
+        // Staging is persisted server-side. Reload so the row is rendered
+        // from the authoritative staged configuration.
+        window.location.reload();
+
+    } catch (error) {
+        setNewProductModalError(error.message);
+    } finally {
+        submitButton.disabled = false;
+    }
+});
+
+document.querySelectorAll(
+    'select[id^="product-"]'
+).forEach(function (select) {
+    select.dataset.previousValue = select.value;
+
+    select.addEventListener("change", function () {
+        select.dataset.previousValue = select.value;
+    });
 });
 
 anotherFileButton.addEventListener("click", function (event) {

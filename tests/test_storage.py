@@ -2,7 +2,9 @@ import json
 
 from app.storage import (
     MemoryReceiptStorage,
+    NullAliasStorage,
     NullMappingStorage,
+    create_alias_storage,
     create_mapping_storage,
     create_receipt_storage,
 )
@@ -169,3 +171,45 @@ def test_sqlite_mapping_storage_persists_with_memory_receipts(
 
     assert row["grocy_product_id"] == 42
     assert row["grocy_product_name"] == "Milk"
+
+
+def test_null_alias_storage():
+    storage = NullAliasStorage()
+
+    assert storage.get("TEST", "milk") is None
+
+    storage.save("TEST", "milk", 42, "Milk")
+
+    assert storage.get("TEST", "milk") is None
+
+    storage.delete("TEST", "milk")
+
+
+def test_sqlite_alias_storage(tmp_path, monkeypatch):
+    import app.storage as storage_module
+
+    monkeypatch.setattr(
+        storage_module,
+        "DATA_DIR",
+        str(tmp_path),
+    )
+    monkeypatch.setattr(
+        storage_module,
+        "DB_PATH",
+        str(tmp_path / "receipts.sqlite3"),
+    )
+
+    storage = create_alias_storage("sqlite")
+
+    assert storage.get("TEST", "milk") is None
+
+    storage.save("TEST", "milk", 42, "Coffee")
+
+    row = storage.get("TEST", "milk")
+
+    assert row["grocy_product_id"] == 42
+    assert row["grocy_product_name"] == "Coffee"
+
+    storage.delete("TEST", "milk")
+
+    assert storage.get("TEST", "milk") is None

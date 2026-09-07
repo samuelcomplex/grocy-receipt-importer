@@ -496,3 +496,111 @@ input[type="checkbox"]:disabled {
     color: var(--surface);
 }
 </style>
+
+<style>
+.new-product-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    align-items: end;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.75rem;
+    padding: 0.65rem;
+    border: 1px solid #ccc;
+    border-radius: 0.4rem;
+    overflow: hidden;
+}
+
+.new-product-field {
+    min-width: 0;
+}
+
+.new-product-field label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 600;
+}
+
+.new-product-field input,
+.new-product-field select {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.new-product-conversion {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.new-product-conversion label {
+    width: 100%;
+    margin-right: 0;
+}
+
+.new-product-conversion input {
+    width: 70px;
+    flex: 0 1 70px;
+}
+
+.new-product-create-button {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.new-product-status {
+    grid-column: 1 / -1;
+    padding: 0.5rem 0.65rem;
+    border-radius: 0.3rem;
+    font-weight: 600;
+}
+
+.new-product-status-missing {
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+}
+
+.new-product-status-failed {
+    background: #f8d7da;
+    border: 1px solid #f1aeb5;
+}
+
+.new-product-status-success {
+    background: #d1e7dd;
+    border: 1px solid #a3cfbb;
+}
+
+.new-product-create-button.status-missing {
+    background: #ffc107;
+    color: #000;
+}
+
+.new-product-create-button.status-failed {
+    background: #dc3545;
+    color: #fff;
+}
+
+.new-product-create-button.status-success {
+    background: #198754;
+    color: #fff;
+}
+
+@media (max-width: 700px) {
+    .new-product-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .new-product-conversion,
+    .new-product-create-button,
+    .new-product-status {
+        grid-column: 1;
+    }
+}
+</style>

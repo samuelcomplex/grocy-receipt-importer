@@ -51,6 +51,10 @@ def load_products():
     return grocy_get("/api/objects/products")
 
 
+def load_product(product_id):
+    return grocy_get(f"/api/objects/products/{int(product_id)}")
+
+
 def load_locations():
     return grocy_get("/api/objects/locations")
 
@@ -65,3 +69,7 @@ def load_quantity_unit_conversions():
 
 def create_product(payload):
     return grocy_post("/api/objects/products", payload)
+
+
+def create_quantity_unit_conversion(payload):
+    return grocy_post("/api/objects/quantity_unit_conversions", payload)

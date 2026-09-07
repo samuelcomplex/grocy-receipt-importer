@@ -77,3 +77,29 @@ def test_create_product_uses_products_endpoint(monkeypatch):
     assert calls == [
         ("/api/objects/products", payload),
     ]
+
+
+def test_create_quantity_unit_conversion(monkeypatch):
+    import app.grocy as grocy
+
+    calls = []
+
+    def fake_post(path, payload):
+        calls.append((path, payload))
+        return {"id": 7}
+
+    monkeypatch.setattr(grocy, "grocy_post", fake_post)
+
+    payload = {
+        "from_qu_id": 3,
+        "to_qu_id": 5,
+        "factor": 12,
+        "product_id": 99,
+    }
+
+    result = grocy.create_quantity_unit_conversion(payload)
+
+    assert result == {"id": 7}
+    assert calls == [
+        ("/api/objects/quantity_unit_conversions", payload)
+    ]

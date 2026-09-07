@@ -90,6 +90,15 @@ def _init_sqlite_db():
             created_at TEXT NOT NULL,
             PRIMARY KEY(store_org, article_number)
         );
+
+        CREATE TABLE IF NOT EXISTS aliases (
+            store_org TEXT NOT NULL,
+            normalized_description TEXT NOT NULL,
+            grocy_product_id INTEGER NOT NULL,
+            grocy_product_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(store_org, normalized_description)
+        );
     """)
     con.commit()
     con.close()
@@ -116,7 +125,7 @@ class SQLiteReceiptStorage:
         try:
             return con.execute(
                 """
-                SELECT id, filename, metadata_json, status, created_at
+                SELECT id, filename, metadata_json, items_json, status, created_at
                 FROM receipts
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -296,6 +305,17 @@ def create_mapping_storage(storage_type: str):
     raise ValueError(f"Unsupported mapping storage: {storage_type}")
 
 
+
+def create_alias_storage(storage_type: str):
+    if storage_type == "sqlite":
+        return SQLiteAliasStorage()
+
+    if storage_type == "none":
+        return NullAliasStorage()
+
+    raise ValueError(f"Unsupported alias storage: {storage_type}")
+
+
 class MemoryReceiptStorage:
     def __init__(self):
         self._receipts = {}
@@ -332,6 +352,89 @@ class MemoryReceiptStorage:
                 return receipt
 
         return None
+
+
+class SQLiteAliasStorage:
+    def __init__(self):
+        _init_sqlite_db()
+
+    def get(self, store_org: str, normalized_description: str):
+        con = db()
+        try:
+            return con.execute(
+                """
+                SELECT *
+                FROM aliases
+                WHERE store_org = ?
+                  AND normalized_description = ?
+                """,
+                (store_org, normalized_description),
+            ).fetchone()
+        finally:
+            con.close()
+
+    def save(
+        self,
+        store_org: str,
+        normalized_description: str,
+        grocy_product_id: int,
+        grocy_product_name: str,
+    ):
+        con = db()
+        try:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO aliases (
+                    store_org,
+                    normalized_description,
+                    grocy_product_id,
+                    grocy_product_name,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """,
+                (
+                    store_org,
+                    normalized_description,
+                    grocy_product_id,
+                    grocy_product_name,
+                ),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def delete(self, store_org: str, normalized_description: str):
+        con = db()
+        try:
+            con.execute(
+                """
+                DELETE FROM aliases
+                WHERE store_org = ?
+                  AND normalized_description = ?
+                """,
+                (store_org, normalized_description),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+
+class NullAliasStorage:
+    def get(self, store_org: str, normalized_description: str):
+        return None
+
+    def save(
+        self,
+        store_org: str,
+        normalized_description: str,
+        grocy_product_id: int,
+        grocy_product_name: str,
+    ):
+        pass
+
+    def delete(self, store_org: str, normalized_description: str):
+        pass
 
 
 class NullMappingStorage:
