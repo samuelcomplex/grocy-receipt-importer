@@ -10,63 +10,44 @@ def headers():
     }
 
 
-def grocy_get(path):
-    response = requests.get(
+def grocy_request(method, path, payload=None, expect_json=True):
+    request_headers = headers()
+
+    if payload is not None:
+        request_headers["Content-Type"] = "application/json"
+
+    response = requests.request(
+        method,
         GROCY_BASE_URL + path,
-        headers=headers(),
+        headers=request_headers,
+        json=payload,
         timeout=20,
     )
-    response.raise_for_status()
-    return response.json()
+
+    if not response.ok:
+        raise requests.HTTPError(
+            f"{response.status_code} {response.reason}: {response.text}",
+            response=response,
+        )
+
+    if expect_json:
+        return response.json()
+
+
+def grocy_get(path):
+    return grocy_request("GET", path)
 
 
 def grocy_post(path, payload):
-    response = requests.post(
-        GROCY_BASE_URL + path,
-        headers={
-            **headers(),
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=20,
-    )
-    if not response.ok:
-        raise requests.HTTPError(
-            f"{response.status_code} {response.reason}: {response.text}",
-            response=response,
-        )
-    return response.json()
+    return grocy_request("POST", path, payload)
 
 
 def grocy_post_no_content(path, payload):
-    response = requests.post(
-        GROCY_BASE_URL + path,
-        headers={
-            **headers(),
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=20,
-    )
-    response.raise_for_status()
+    grocy_request("POST", path, payload, expect_json=False)
 
 
 def grocy_put(path, payload):
-    response = requests.put(
-        GROCY_BASE_URL + path,
-        headers={
-            **headers(),
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=20,
-    )
-    if not response.ok:
-        raise requests.HTTPError(
-            f"{response.status_code} {response.reason}: {response.text}",
-            response=response,
-        )
-    return response.json()
+    return grocy_request("PUT", path, payload)
 
 
 def load_products():
