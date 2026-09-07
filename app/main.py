@@ -212,8 +212,6 @@ async def undo_import(
 
         if remaining_statuses and remaining_statuses <= {"Undone"}:
             receipt_status = "undone"
-        elif "Imported" in remaining_statuses:
-            receipt_status = "partial"
         else:
             receipt_status = "partial"
 
