@@ -51,6 +51,24 @@ def grocy_post_no_content(path, payload):
     response.raise_for_status()
 
 
+def grocy_put(path, payload):
+    response = requests.put(
+        GROCY_BASE_URL + path,
+        headers={
+            **headers(),
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=20,
+    )
+    if not response.ok:
+        raise requests.HTTPError(
+            f"{response.status_code} {response.reason}: {response.text}",
+            response=response,
+        )
+    return response.json()
+
+
 def load_products():
     return grocy_get("/api/objects/products")
 
@@ -77,3 +95,10 @@ def create_product(payload):
 
 def create_quantity_unit_conversion(payload):
     return grocy_post("/api/objects/quantity_unit_conversions", payload)
+
+
+def update_quantity_unit_conversion(conversion_id, payload):
+    return grocy_put(
+        f"/api/objects/quantity_unit_conversions/{int(conversion_id)}",
+        payload,
+    )

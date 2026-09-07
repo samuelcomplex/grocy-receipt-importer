@@ -24,6 +24,7 @@ from plugins.discovery import find_parser
 from app.grocy import (
     create_product,
     create_quantity_unit_conversion,
+    update_quantity_unit_conversion,
     grocy_get,
     grocy_post,
     load_product,
@@ -1148,7 +1149,6 @@ def build_new_product_payload(
         "qu_id_consume": int(stock_unit_id),
         "qu_id_price": int(purchase_unit_id),
         "min_stock_amount": 0,
-        "__qu_factor_purchase_to_stock": float(conversion),
     }
 
 
@@ -1199,10 +1199,56 @@ def create_new_grocy_product(
             "Grocy created the product but did not return its product ID."
         )
 
+    product_id = int(product_id)
+    purchase_unit_id = int(purchase_unit_id)
+    stock_unit_id = int(stock_unit_id)
+
+    try:
+        desired_factor = Decimal(str(conversion_factor))
+    except Exception as exc:
+        raise ValueError("Conversion factor must be a number.") from exc
+
+    if desired_factor <= 0:
+        raise ValueError("Conversion factor must be greater than zero.")
+
+    if purchase_unit_id != stock_unit_id:
+        conversions = load_quantity_unit_conversions()
+
+        conversion_result = find_purchase_to_stock_conversion(
+            purchase_unit_id,
+            stock_unit_id,
+            conversions,
+            product_id=product_id,
+        )
+
+        if conversion_result is None:
+            raise RuntimeError(
+                "Grocy created the product but did not create its "
+                "purchase-to-stock conversion."
+            )
+
+        conversion = conversion_result["conversion"]
+        conversion_id = conversion.get("id")
+
+        if conversion_id is None:
+            raise RuntimeError(
+                "Grocy purchase-to-stock conversion did not return its ID."
+            )
+
+        update_quantity_unit_conversion(
+            conversion_id,
+            {
+                "from_qu_id": purchase_unit_id,
+                "to_qu_id": stock_unit_id,
+                "factor": float(desired_factor),
+                "product_id": product_id,
+            },
+        )
+
     return {
-        "product_id": int(product_id),
+        "product_id": product_id,
         "product": created,
-        "conversion_factor": str(conversion_factor),
+        "conversion_factor": str(desired_factor),
     }
 
 

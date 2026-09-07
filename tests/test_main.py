@@ -1102,7 +1102,27 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
     monkeypatch.setattr(
         main,
         "load_quantity_unit_conversions",
-        lambda: [],
+        lambda: [
+            {
+                "id": 123,
+                "from_qu_id": 3,
+                "to_qu_id": 5,
+                "factor": 1,
+                "product_id": 99,
+            }
+        ],
+    )
+
+    updated_conversion_calls = []
+
+    def fake_update_conversion(conversion_id, payload):
+        updated_conversion_calls.append((conversion_id, payload))
+        return {"id": conversion_id, **payload}
+
+    monkeypatch.setattr(
+        main,
+        "update_quantity_unit_conversion",
+        fake_update_conversion,
     )
 
     def fake_create_product(payload):
@@ -1159,11 +1179,22 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
             "qu_id_consume": 5,
             "qu_id_price": 3,
             "min_stock_amount": 0,
-            "__qu_factor_purchase_to_stock": 2.0,
         },
     ]
 
     assert created_conversion_calls == []
+
+    assert updated_conversion_calls == [
+        (
+            123,
+            {
+                "from_qu_id": 3,
+                "to_qu_id": 5,
+                "factor": 2.0,
+                "product_id": 99,
+            },
+        ),
+    ]
 
     assert stock_calls == [
         (
@@ -1316,7 +1347,25 @@ async def test_import_new_product_failure_does_not_save_mapping_or_alias(monkeyp
             {"id": 5, "name": "piece"},
         ],
     )
-    monkeypatch.setattr(main, "load_quantity_unit_conversions", lambda: [])
+    monkeypatch.setattr(
+        main,
+        "load_quantity_unit_conversions",
+        lambda: [
+            {
+                "id": 123,
+                "from_qu_id": 3,
+                "to_qu_id": 5,
+                "factor": 1,
+                "product_id": 101,
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        main,
+        "update_quantity_unit_conversion",
+        lambda conversion_id, payload: {"id": conversion_id, **payload},
+    )
 
     monkeypatch.setattr(
         main,
