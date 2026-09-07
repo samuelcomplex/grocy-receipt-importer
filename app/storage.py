@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import os
 import sqlite3
 from typing import Protocol
@@ -68,42 +69,48 @@ def db():
     return con
 
 
-def _init_sqlite_db():
+@contextmanager
+def db_connection():
     con = db()
-    con.executescript("""
-        CREATE TABLE IF NOT EXISTS receipts (
-            id TEXT PRIMARY KEY,
-            sha256 TEXT UNIQUE NOT NULL,
-            filename TEXT NOT NULL,
-            raw_text TEXT NOT NULL,
-            metadata_json TEXT NOT NULL,
-            items_json TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'review',
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS mappings (
-            store_org TEXT NOT NULL,
-            article_number TEXT NOT NULL,
-            grocy_product_id INTEGER NOT NULL,
-            grocy_product_name TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY(store_org, article_number)
-        );
-
-        CREATE TABLE IF NOT EXISTS aliases (
-            store_org TEXT NOT NULL,
-            normalized_description TEXT NOT NULL,
-            grocy_product_id INTEGER NOT NULL,
-            grocy_product_name TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY(store_org, normalized_description)
-        );
-    """)
-    con.commit()
-    con.close()
+    try:
+        yield con
+    finally:
+        con.close()
 
 
+def _init_sqlite_db():
+    with db_connection() as con:
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS receipts (
+                id TEXT PRIMARY KEY,
+                sha256 TEXT UNIQUE NOT NULL,
+                filename TEXT NOT NULL,
+                raw_text TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                items_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'review',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS mappings (
+                store_org TEXT NOT NULL,
+                article_number TEXT NOT NULL,
+                grocy_product_id INTEGER NOT NULL,
+                grocy_product_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(store_org, article_number)
+            );
+
+            CREATE TABLE IF NOT EXISTS aliases (
+                store_org TEXT NOT NULL,
+                normalized_description TEXT NOT NULL,
+                grocy_product_id INTEGER NOT NULL,
+                grocy_product_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(store_org, normalized_description)
+            );
+        """)
+        con.commit()
 
 
 class SQLiteReceiptStorage:
@@ -111,18 +118,14 @@ class SQLiteReceiptStorage:
         _init_sqlite_db()
 
     def get(self, receipt_id: str):
-        con = db()
-        try:
+        with db_connection() as con:
             return con.execute(
                 "SELECT * FROM receipts WHERE id = ?",
                 (receipt_id,),
             ).fetchone()
-        finally:
-            con.close()
 
     def list_recent(self, limit: int = 20):
-        con = db()
-        try:
+        with db_connection() as con:
             return con.execute(
                 """
                 SELECT id, filename, metadata_json, items_json, status, created_at
@@ -132,12 +135,9 @@ class SQLiteReceiptStorage:
                 """,
                 (limit,),
             ).fetchall()
-        finally:
-            con.close()
 
     def save(self, receipt):
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 """
                 INSERT INTO receipts (
@@ -164,8 +164,6 @@ class SQLiteReceiptStorage:
                 ),
             )
             con.commit()
-        finally:
-            con.close()
 
     def update(self, receipt_id: str, **fields):
         if not fields:
@@ -187,36 +185,27 @@ class SQLiteReceiptStorage:
 
         assignments = ", ".join(f"{field} = ?" for field in fields)
 
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 f"UPDATE receipts SET {assignments} WHERE id = ?",
                 (*fields.values(), receipt_id),
             )
             con.commit()
-        finally:
-            con.close()
 
     def delete(self, receipt_id: str):
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 "DELETE FROM receipts WHERE id = ?",
                 (receipt_id,),
             )
             con.commit()
-        finally:
-            con.close()
 
     def find_by_hash(self, sha256: str):
-        con = db()
-        try:
+        with db_connection() as con:
             return con.execute(
                 "SELECT id FROM receipts WHERE sha256 = ? LIMIT 1",
                 (sha256,),
             ).fetchone()
-        finally:
-            con.close()
 
 
 class SQLiteMappingStorage:
@@ -224,8 +213,7 @@ class SQLiteMappingStorage:
         _init_sqlite_db()
 
     def get(self, store_org: str, article_number: str):
-        con = db()
-        try:
+        with db_connection() as con:
             return con.execute(
                 """
                 SELECT *
@@ -235,8 +223,6 @@ class SQLiteMappingStorage:
                 """,
                 (store_org, article_number),
             ).fetchone()
-        finally:
-            con.close()
 
     def save(
         self,
@@ -245,8 +231,7 @@ class SQLiteMappingStorage:
         grocy_product_id: int,
         grocy_product_name: str,
     ):
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 """
                 INSERT OR REPLACE INTO mappings (
@@ -266,12 +251,9 @@ class SQLiteMappingStorage:
                 ),
             )
             con.commit()
-        finally:
-            con.close()
 
     def delete(self, store_org: str, article_number: str):
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 """
                 DELETE FROM mappings
@@ -281,8 +263,6 @@ class SQLiteMappingStorage:
                 (store_org, article_number),
             )
             con.commit()
-        finally:
-            con.close()
 
 
 def create_receipt_storage(storage_type: str):
@@ -359,8 +339,7 @@ class SQLiteAliasStorage:
         _init_sqlite_db()
 
     def get(self, store_org: str, normalized_description: str):
-        con = db()
-        try:
+        with db_connection() as con:
             return con.execute(
                 """
                 SELECT *
@@ -370,8 +349,6 @@ class SQLiteAliasStorage:
                 """,
                 (store_org, normalized_description),
             ).fetchone()
-        finally:
-            con.close()
 
     def save(
         self,
@@ -380,8 +357,7 @@ class SQLiteAliasStorage:
         grocy_product_id: int,
         grocy_product_name: str,
     ):
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 """
                 INSERT OR REPLACE INTO aliases (
@@ -401,12 +377,9 @@ class SQLiteAliasStorage:
                 ),
             )
             con.commit()
-        finally:
-            con.close()
 
     def delete(self, store_org: str, normalized_description: str):
-        con = db()
-        try:
+        with db_connection() as con:
             con.execute(
                 """
                 DELETE FROM aliases
@@ -416,8 +389,6 @@ class SQLiteAliasStorage:
                 (store_org, normalized_description),
             )
             con.commit()
-        finally:
-            con.close()
 
 
 class NullAliasStorage:
