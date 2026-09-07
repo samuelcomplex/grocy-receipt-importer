@@ -156,7 +156,7 @@
 >
 {% if item.new_product_config %}
 <option value="new" selected>
-    ✨ New product — configure
+    New product — configure
 </option>
 {% else %}
 <option value="">{{ t("ui.skip_item") }}</option>
@@ -262,20 +262,11 @@
 {% endif %}
 
 {% if item.new_product_config %}
-<div class="new-product-staged">
-    <span class="new-product-staged-icon">✨</span>
-    <div>
-        <strong>New product — will be created on import</strong>
-        <div class="new-product-staged-details">
-            {{ item.new_product_config.name }}
-            · {{ item.new_product_config.purchase_unit_name }}
-            → {{ item.new_product_config.stock_unit_name }}
-            {% if item.new_product_config.purchase_unit_id != item.new_product_config.stock_unit_id %}
-                · 1 = {{ item.new_product_config.conversion_factor }}
-            {% endif %}
-        </div>
-    </div>
-</div>
+<span
+    class="new-product-staged-icon"
+    title="New product will be created when you import this receipt"
+    aria-label="New product will be created when you import this receipt"
+>i</span>
 {% endif %}
 
 {% if item.new_product_status == "error" %}
@@ -310,7 +301,7 @@
     class="mapping-indicator mapping-saved"
     title="{{ t('ui.saved_mapping') }}"
     aria-label="{{ t('ui.saved_mapping') }}"
->✓</span>
+>i</span>
 {% elif item.suggested_grocy_product_id %}
 <span
     class="mapping-indicator mapping-suggested"
@@ -678,24 +669,22 @@
     color: var(--parser-accent, var(--text));
 }
 
-.new-product-staged {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6rem;
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    border: 1px solid var(--warning);
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--warning) 12%, var(--surface));
-}
-
 .new-product-staged-icon {
-    flex: 0 0 auto;
-}
-
-.new-product-staged-details {
-    margin-top: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-left: 0.5rem;
+    border-radius: 50%;
+    background: #1976d2;
+    color: #fff;
     font-size: 0.9rem;
+    font-weight: 700;
+    font-family: Arial, sans-serif;
+    line-height: 1;
+    cursor: help;
+    vertical-align: middle;
 }
 
 .new-product-status {
@@ -1005,7 +994,7 @@ newProductModalForm.addEventListener("submit", async function (event) {
 
     try {
         const response = await fetch(
-            "{{ request.url.path.rsplit('/review', 1)[0] }}/receipt/{{ receipt_id }}/stage-new-product",
+            "{{ request.url.path.rsplit('/review', 1)[0] }}/stage-new-product",
             {
                 method: "POST",
                 body: formData,
