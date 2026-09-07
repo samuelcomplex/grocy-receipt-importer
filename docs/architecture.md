@@ -4,60 +4,91 @@
 
 Grocy Receipt Importer separates the core application from retailer-specific receipt parsing.
 
+The application is structured around a clear boundary:
+
 ```text
 Receipt PDF
-    │
-    ▼
+    |
+    v
 PDF text extraction
-    │
-    ▼
+    |
+    v
 Plugin discovery
-    │
-    ▼
+    |
+    v
 Retailer parser
-    │
-    ▼
+    |
+    v
 Common receipt structure
-    │
-    ▼
+    |
+    v
 Review and product mapping
-    │
-    ▼
+    |
+    v
 Selected item import
-    │
-    ▼
+    |
+    v
 Grocy
 ```
 
-The key architectural principle is:
-
-> Retailer-specific receipt knowledge belongs in plugins, not in the core application.
-
-This allows new retailers to be added without modifying the core importer.
+The key architectural principle is that retailer-specific receipt knowledge belongs in plugins. The core application should operate on a common receipt representation and should not contain retailer-specific parsing rules.
 
 ## Core application
 
 The core application is responsible for:
 
 - accepting receipt PDF uploads
-- extracting text from PDFs
-- discovering receipt parser plugins
-- selecting a parser that recognizes the receipt
+- extracting text from receipt PDFs
+- discovering parser plugins
+- selecting the matching parser
 - applying saved product mappings
 - storing receipt information
-- displaying the review interface
+- displaying the receipt review interface
 - communicating with Grocy
-- importing selected items into Grocy
+- importing selected receipt items
 - handling quantities, units, prices, and dates
 - tracking receipt and item status
 - managing receipt history
-- managing UI translations and language selection
+- providing UI translations and language selection
+- staging/configuring new Grocy products from unmatched receipt items
 
 The core should not contain retailer-specific parsing rules.
 
+Current core modules include:
+
+```text
+app/
+├── __init__.py
+├── config.py
+├── grocy.py
+├── main.py
+├── models.py
+├── product_matching.py
+├── product_service.py
+├── receipt_model.py
+├── storage.py
+└── web.py
+```
+
+The previous monolithic `app.py` application has been replaced by these modules.
+
+### Core module responsibilities
+
+- `app/main.py` — application routes and the main receipt import/review workflow.
+- `app/grocy.py` — Grocy API communication helpers.
+- `app/product_service.py` — Grocy product creation/staging, product configuration, quantity-unit conversion handling, and related product operations.
+- `app/product_matching.py` — matching receipt items to Grocy products and saved mappings.
+- `app/receipt_model.py` — receipt and receipt-item domain structures.
+- `app/models.py` — shared typed application models.
+- `app/storage.py` — receipt, mapping, and related persistent storage.
+- `app/config.py` — application configuration.
+- `app/web.py` — web/application support functionality.
+
 ## Parser plugins
 
-Each supported retailer has its own parser plugin.
+Retailer-specific parsing lives under `plugins/`.
+
+Current plugin tree:
 
 ```text
 plugins/
@@ -67,28 +98,43 @@ plugins/
 └── ica.py
 ```
 
-A parser has two main responsibilities:
+The parser contract is centered on:
 
-```python
+```text
 matches(text) -> bool
 parse(text) -> dict
 ```
 
-### Recognition
+A parser is responsible for:
 
-`matches(text)` determines whether the plugin recognizes the receipt.
+- recognizing whether the receipt text belongs to its retailer
+- parsing retailer-specific receipt text
+- normalizing the result into the common receipt structure
 
-Recognition logic should be specific enough to avoid incorrectly claiming receipts belonging to another retailer.
+A parser must not communicate with Grocy.
 
-### Parsing
+### Plugin discovery
 
-`parse(text)` converts retailer-specific receipt text into the common receipt structure used by the core application.
+Plugins are discovered automatically.
 
-The parser does not import anything into Grocy.
+The discovery system looks for parser classes inheriting from the common `ReceiptParser` base class. The base class and discovery mechanism do not contain retailer-specific logic.
+
+To add a retailer:
+
+1. Add a new plugin module under `plugins/`.
+2. Implement the `ReceiptParser` contract.
+3. Implement retailer recognition in `matches()`.
+4. Implement retailer-specific parsing in `parse()`.
+5. Return the common receipt structure.
+6. Add parser tests and sanitized receipt fixtures as appropriate.
+
+There is no central retailer registry that must be modified for each new plugin.
 
 ## Common receipt structure
 
-Parsers return structured data containing metadata and receipt items:
+Plugins normalize their output into a common receipt representation used by the core application.
+
+Conceptually:
 
 ```python
 {
@@ -97,7 +143,7 @@ Parsers return structured data containing metadata and receipt items:
 }
 ```
 
-Items may contain information such as:
+Receipt items contain importer-relevant information such as:
 
 - article number
 - description
@@ -107,117 +153,163 @@ Items may contain information such as:
 - discount
 - net price
 
-The common structure should represent information required by the importer rather than reproducing every retailer's receipt format.
+The common structure represents the information required by the importer rather than every field that may exist in an individual retailer's receipt format.
 
-## Plugin discovery
-
-Parser plugins are discovered automatically from the `plugins/` directory.
-
-The discovery system loads Python modules and identifies classes inheriting from `ReceiptParser`.
-
-Framework modules such as `base.py` and `discovery.py` are not treated as retailer parsers.
-
-Adding a retailer normally requires only a new plugin file:
-
-```text
-plugins/new_retailer.py
-```
-
-No central parser registry is required.
+For receipt pricing, the `net` value represents the total price for the receipt line. The core import workflow calculates the price per imported Grocy stock unit from the line total and the final stock quantity.
 
 ## Responsibility boundaries
 
-### Core
+### Core application
 
-The core handles:
+The core owns:
 
-- PDF processing
-- database access
+- PDF handling and text extraction
+- plugin discovery
+- receipt parsing orchestration
+- database/storage access
 - Grocy API communication
-- product mappings
+- product matching
+- saved article-number mappings
 - receipt storage
-- review state
-- import state
+- receipt review and import state
+- quantity and unit handling
+- price handling
+- new Grocy product staging/configuration
 - receipt history
 - translations
 
 ### Plugins
 
-Plugins handle:
+Plugins own:
 
 - retailer recognition
-- retailer-specific text parsing
-- normalization into the common receipt structure
+- retailer-specific receipt parsing
+- retailer-specific normalization into the common receipt structure
 
-### Plugins should not
+### Plugins must not
 
 Plugins should not:
 
 - call the Grocy API
 - access the application database
-- create Grocy products
-- import stock
-- save product mappings
-- contain web routes
-- modify templates
-- manage translations
+- create or modify Grocy products
+- manage Grocy stock
+- manage saved product mappings
+- define web routes
+- render templates
+- implement UI translations
 
-Keeping these boundaries makes parsers easier to test and maintain.
+This separation keeps retailer-specific knowledge isolated and allows the core application to evolve without rewriting every parser.
 
 ## Receipt import lifecycle
 
-A typical receipt import follows these steps:
+The receipt import lifecycle is:
 
-1. The user uploads a receipt PDF.
-2. The core extracts text from the PDF.
-3. Parser plugins are checked for a match.
-4. The matching plugin parses the receipt.
-5. Saved product mappings are applied where available.
-6. The receipt is stored in the local SQLite database.
-7. The user reviews the parsed receipt.
-8. The user selects the items to import.
-9. The selected items are imported into Grocy.
-10. Successfully imported items are marked as `Imported`.
-11. Imported items cannot be imported again accidentally.
-12. Receipt history remains available until the receipt is deleted.
+1. Upload receipt PDF.
+2. Extract receipt text.
+3. Discover available parsers.
+4. Select the parser that recognizes the receipt.
+5. Parse the receipt.
+6. Apply saved product mappings and product matching.
+7. Store the receipt and its items.
+8. Display the receipt review.
+9. Select items for import.
+10. Import selected items into Grocy.
+11. Mark successfully imported items as protected from re-import.
+12. Keep the receipt available in history until it is deleted.
+
+Unmatched items can also be configured as new Grocy products from the receipt review. Product configuration is staged before the receipt item is imported.
+
+If an import fails for an item, the failure is shown on the affected item and the item is not treated as successfully imported.
 
 ## Product mappings
 
-When an item has an article number, the importer can associate that article number with a Grocy product.
+Saved product mappings associate a retailer/article number with a Grocy product.
 
-Mappings are stored independently of individual receipts so that future receipts from the same retailer can benefit from previous selections.
+The mapping key includes the retailer/store context together with the article number so that article numbers from different retailers do not have to share the same mapping.
 
-The mapping key includes the retailer/store organization and article number.
+Mappings are stored independently from receipt records.
+
+The receipt review also allows an existing article-number mapping to be unlinked.
+
+## New Grocy product staging
+
+When an unmatched receipt item needs to become a Grocy product, the receipt review can stage the required product configuration before import.
+
+The configuration includes:
+
+- product name
+- Grocy location
+- purchase quantity unit
+- stock quantity unit
+- purchase-to-stock quantity conversion
+
+The staged product is then created/configured through the core Grocy product service rather than by the retailer parser.
+
+The product-specific conversion is important when the purchase unit and stock unit differ. The application uses the resulting Grocy stock-unit quantity when importing receipt quantities.
+
+Whenever possible, products created directly in Grocy should use a stock unit that matches the receipt quantity unit. When purchase and stock units differ, the Grocy product-specific conversion must describe the relationship between them.
+
+## Quantities, units, and prices
+
+Receipt units are treated as retailer metadata for matching and parsing. A receipt unit does not by itself require a global Grocy quantity-unit conversion merely to match a product.
+
+When importing a receipt item, the application converts the receipt quantity into the selected Grocy product's stock unit using the product-specific Grocy conversion.
+
+The receipt item's `net` price is the total price for the receipt line, not a per-stock-unit price.
+
+Therefore the import price is calculated as:
+
+```text
+price per stock unit = receipt line total / imported stock amount
+```
+
+For example, a receipt line containing 1.79 kg with a total price of 211.76 results in:
+
+```text
+211.76 / 1.79 = 118.3016759... kr/kg
+```
+
+The value sent to Grocy is the calculated price per imported stock unit.
+
+When the purchase and stock units differ, the stock quantity must be calculated first and the line total divided by that final stock quantity. For example, if 2 packs correspond to 4 stock pieces and the receipt line total is 30, the imported stock quantity is 4 and the price is:
+
+```text
+30 / 4 = 7.5 per stock piece
+```
+
+This keeps receipt line totals from being incorrectly stored as per-unit prices.
 
 ## Import state
 
-Receipt items have an internal status used by the application.
-
-Important states include:
+Receipt items use stable internal import states such as:
 
 - `Imported`
 - `Skipped`
 - `Failed`
 
-The UI translates these states according to the selected language, while the internal values remain stable for application logic.
+The UI translates these states for the selected language.
 
-An item marked `Imported` is not imported again when the receipt is submitted later.
+Successfully imported items are protected and cannot be imported again.
+
+Undo operations can reverse imported Grocy transactions directly from the receipt review. After an undo, receipt/item status is updated so the review reflects the current import state.
 
 ## Receipt deletion
 
-Deleting a receipt removes the receipt from the importer's database.
+Deleting a receipt removes the receipt from the importer database.
 
-It does not:
+Receipt deletion does not remove:
 
-- remove Grocy products
-- remove Grocy stock
-- undo previous Grocy transactions
+- Grocy products
+- Grocy stock
+- Grocy transactions
+- other Grocy-side data
 
-Receipt deletion is therefore a history-management operation, not a rollback operation.
-
-A future rollback feature would need to track the corresponding Grocy transaction IDs and explicitly undo those transactions.
+Undoing an import is a separate operation from deleting a receipt. A future rollback design would need to retain the relevant Grocy transaction IDs.
 
 ## Internationalization
+
+The application supports English and Swedish.
 
 Translations are stored in:
 
@@ -227,90 +319,122 @@ translations/
 └── sv.json
 ```
 
-Translation files are loaded when the application starts.
+The application uses the translation helper for UI text and falls back to English when a translation is unavailable.
 
-Templates use the translation helper:
+The application name remains fixed rather than being translated.
 
-```jinja2
-{{ t("ui.receipt_review") }}
-```
+Language selection is persisted using the browser cookie.
 
-If a translation is missing in the selected language, the application falls back to English.
+## Web application structure
 
-The application name remains fixed as:
+The web application is built around the modular `app/` package and the templates under `templates/`.
 
-```text
-Grocy Receipt Importer
-```
+The main receipt review workflow includes:
 
-It is intentionally not translated.
+- receipt upload and parsing
+- product matching
+- selection of receipt items
+- new Grocy product configuration
+- importing selected items
+- undoing imported transactions
+- unlinking saved mappings
+- receipt history and deletion
 
-The selected language is stored in a browser cookie.
+JSON responses are handled explicitly by the application routes, while user-facing errors are shown in the receipt review where appropriate.
 
 ## Docker layout
 
-The Docker image contains the application code, templates, plugins, and translations:
+The application is packaged for Docker.
+
+The current application source layout inside the container is based on the refactored project structure:
 
 ```text
 /app
-├── app/main.py
-├── common.py
+├── app/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── grocy.py
+│   ├── main.py
+│   ├── models.py
+│   ├── product_matching.py
+│   ├── product_service.py
+│   ├── receipt_model.py
+│   ├── storage.py
+│   └── web.py
 ├── plugins/
 ├── templates/
 ├── translations/
 └── VERSION
-```
 
-Runtime data is mounted separately:
-
-```text
 /data
 └── receipts.sqlite3
 ```
 
-The plugins directory is mounted read-only so parser plugins can be updated independently of the application image.
+Receipt data is stored under `/data`.
+
+Plugin code is part of the application package and is treated as application source rather than user-generated data.
 
 ## Data flow
 
+The high-level data flow is:
+
 ```text
-                 ┌──────────────────┐
-                 │    Receipt PDF   │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │  Text extraction │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │ Plugin discovery │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │ Retailer parser  │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │ Structured data  │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │ SQLite / Review  │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │ Selected imports │
-                 └────────┬─────────┘
-                          │
-                          ▼
-                 ┌──────────────────┐
-                 │      Grocy       │
-                 └──────────────────┘
+Receipt PDF
+    |
+    v
+Text extraction
+    |
+    v
+Plugin discovery
+    |
+    v
+Retailer parser
+    |
+    v
+Structured receipt data
+    |
+    +----------------------+
+    |                      |
+    v                      v
+SQLite / receipt       Review / matching
+storage                    |
+                            v
+                     Selected imports
+                            |
+                            v
+                          Grocy
 ```
 
-The core application owns the transitions between these stages. Plugins only own retailer-specific recognition and parsing.
+The core application owns the transitions between these stages.
+
+Plugins only recognize and parse retailer-specific receipt text and return normalized data. They do not participate in Grocy operations, persistence, product matching, or web presentation.
+
+## Architectural principles
+
+The main architectural principles are:
+
+1. **Keep retailer knowledge in plugins.**
+   Retailer-specific formats and parsing rules belong under `plugins/`.
+
+2. **Keep Grocy integration in the core.**
+   Plugins never communicate directly with Grocy.
+
+3. **Use a common receipt model.**
+   Parser output is normalized before the rest of the application processes it.
+
+4. **Keep product operations in the product service.**
+   Product creation, configuration, and quantity conversion are handled centrally.
+
+5. **Treat receipt line prices consistently.**
+   Parsed `net` values are line totals; the core calculates the corresponding price per imported stock unit.
+
+6. **Protect successfully imported items.**
+   The importer must not accidentally import the same receipt item twice.
+
+7. **Keep importer data separate from Grocy data.**
+   Deleting an importer receipt does not delete or roll back Grocy data.
+
+8. **Keep UI concerns out of parsers.**
+   Templates, routes, and translations belong to the application layer.
+
+This architecture allows new retailers and future core features to be added without coupling retailer-specific parsing to Grocy or the web application.

@@ -106,6 +106,22 @@ def build_new_product_payload(
     }
 
 
+def calculate_price_per_stock_unit(net_price, stock_amount):
+    if net_price is None:
+        raise ValueError("Receipt item has no net price.")
+
+    try:
+        price = Decimal(str(net_price))
+        amount = Decimal(str(stock_amount))
+    except Exception as exc:
+        raise ValueError("Receipt price or stock amount is invalid.") from exc
+
+    if amount <= 0:
+        raise ValueError("Stock amount must be greater than zero.")
+
+    return price / amount
+
+
 def calculate_stock_amount(
     purchase_amount,
     purchase_unit_id,

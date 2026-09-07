@@ -6,6 +6,41 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-08
+
+### Added
+
+- Typed core receipt and receipt-item models.
+- Configurable receipt and mapping storage backends.
+- Explicit parser contracts and expanded automated test coverage.
+- Refactored Grocy integration, product matching, product creation, receipt models, storage, and web application modules.
+- Ability to configure and stage new Grocy products directly from the receipt review.
+- Grocy location, purchase-unit, and stock-unit selection when creating a new product.
+- Product-specific purchase-to-stock quantity conversions for new products.
+- Receipt import support for products whose purchase and stock quantity units differ.
+- Undo imported Grocy transactions directly from the receipt review.
+- Unlink saved article-number mappings from the receipt review.
+- English and Swedish translations for review actions and statuses.
+
+### Changed
+
+- Receipt units are treated as retailer metadata and no longer require a Grocy quantity-unit conversion for matching.
+- Imported quantities are converted to the selected Grocy product's stock unit using the product-specific Grocy conversion.
+- Receipt line prices are treated as total prices for the receipt line and are converted to price per imported stock unit before being sent to Grocy.
+- The receipt review now supports configuring unmatched items as new Grocy products before importing.
+- Improved receipt review and import error handling.
+- Improved JSON response handling and application structure.
+- Improved receipt status handling after undo operations.
+- Previously imported items retain their protected state and cannot be imported again.
+- Updated Docker packaging for the refactored application structure.
+
+### Fixed
+
+- Prevented incorrect receipt totals from being stored as per-stock-unit prices.
+- Prevented incorrect stock quantities when purchase and stock units differ.
+- Prevented unlink and undo actions from accidentally submitting the main receipt import form.
+- Receipt import failures are shown directly on the affected item.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added

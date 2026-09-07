@@ -1192,7 +1192,7 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
                 "best_before_date": "2026-09-05",
                 "transaction_type": "purchase",
                 "purchased_date": "2026-09-05",
-                "price": 30.0,
+                "price": 7.5,
                 "note": "Receipt 12345; article 123",
             },
         ),
@@ -1259,7 +1259,8 @@ async def test_import_preserves_decimal_net_price(monkeypatch):
     )
 
     assert result["items"][0]["status"] == "Imported"
-    assert stock_calls[0][1]["price"] == 211.76
+    assert stock_calls[0][1]["amount"] == 2.0
+    assert stock_calls[0][1]["price"] == pytest.approx(211.76 / 2.0)
 
 
 @pytest.mark.anyio

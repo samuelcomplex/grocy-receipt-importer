@@ -19,6 +19,7 @@ from app.grocy import (
 )
 from app.product_matching import normalize_product_name, suggest_product_matches
 from app.product_service import (
+    calculate_price_per_stock_unit,
     calculate_stock_amount,
     create_new_grocy_product,
     validate_new_product_configuration,
@@ -856,7 +857,10 @@ async def import_receipt(
                 conversion_factor=conversion_factor,
             )
 
-            net_price = item["net"]
+            net_price = calculate_price_per_stock_unit(
+                item["net"],
+                amount,
+            )
             payload = {
                 "amount": float(amount),
                 "best_before_date": metadata.get("date") or None,
