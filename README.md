@@ -1,6 +1,6 @@
 # Grocy Receipt Importer
 
-**Version 0.2.5**
+**Version 0.3.0**
 
 A self-hosted web application that extracts receipt data from PDF files, lets you review and map products, and imports selected items into [Grocy](https://grocy.info/).
 
@@ -221,7 +221,7 @@ The project follows [Semantic Versioning](https://semver.org/):
 MAJOR.MINOR.PATCH
 ```
 
-The current release is **v0.2.5**.
+The current release is **v0.3.0**.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
@@ -237,6 +237,13 @@ Do not commit:
 - private database files
 
 If you discover a security issue, please report it privately rather than opening a public issue with sensitive details.
+
+## What's new in 0.3.0
+
+- Refactored the application into separate modules for the web layer, Grocy integration, product matching, receipt models, and storage.
+- Added a typed core receipt model that separates parsed receipt data from application state.
+- Added configurable receipt and mapping storage backends, including in-memory receipt storage.
+- Added explicit parser contracts and expanded automated test coverage.
 
 ## What's new in 0.2.5
 

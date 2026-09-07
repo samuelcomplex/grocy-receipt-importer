@@ -6,9 +6,18 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-07
+
 ### Added
 
-- Coop receipt parser plugin (`plugins/coop.py`), ported from the standalone `receipt-import-coop` project.
+- Typed core receipt models for receipt and receipt-item data.
+- Configurable receipt and mapping storage backends.
+- Explicit parser contracts and expanded automated test coverage.
+
+### Changed
+
+- Refactored the application into separate modules for the web layer, Grocy integration, product matching, receipt models, and storage.
+- Separated parsed receipt data from application state and Grocy mappings.
 
 ## [0.2.5] - 2026-09-04
 
