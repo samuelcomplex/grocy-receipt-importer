@@ -856,7 +856,7 @@ async def import_receipt(
                 conversion_factor=conversion_factor,
             )
 
-            net_price = money(item["net"])
+            net_price = item["net"]
             payload = {
                 "amount": float(amount),
                 "best_before_date": metadata.get("date") or None,

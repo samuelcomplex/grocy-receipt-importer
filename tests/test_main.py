@@ -1192,7 +1192,7 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
                 "best_before_date": "2026-09-05",
                 "transaction_type": "purchase",
                 "purchased_date": "2026-09-05",
-                "price": 3000.0,
+                "price": 30.0,
                 "note": "Receipt 12345; article 123",
             },
         ),
@@ -1205,6 +1205,61 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
     assert aliases.saved == [
         ("TEST", "milk", 99, "Coffee"),
     ]
+
+
+@pytest.mark.anyio
+async def test_import_preserves_decimal_net_price(monkeypatch):
+    receipt = make_import_receipt()
+    receipt["items_json"] = json.dumps([
+        {
+            **json.loads(receipt["items_json"])[0],
+            "net": "211.76",
+        },
+    ])
+
+    storage = FakeImportReceiptStorage(receipt)
+    mappings = FakeMappingStorage()
+    aliases = FakeAliasStorage()
+    stock_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+    monkeypatch.setattr(main, "alias_storage", aliases)
+
+    monkeypatch.setattr(main, "load_products", lambda: [
+        {
+            "id": 42,
+            "name": "Blandfärs Storpack",
+            "qu_id_purchase": 5,
+            "qu_id_stock": 5,
+        },
+    ])
+    monkeypatch.setattr(main, "load_quantity_units", lambda: [
+        {"id": 5, "name": "kg"},
+    ])
+    monkeypatch.setattr(main, "load_quantity_unit_conversions", lambda: [])
+
+    def fake_import(path, payload):
+        stock_calls.append((path, payload))
+        return [{"transaction_id": 777}]
+
+    monkeypatch.setattr(main, "grocy_post", fake_import)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+        }),
+        "receipt-1",
+    )
+
+    assert result["items"][0]["status"] == "Imported"
+    assert stock_calls[0][1]["price"] == 211.76
 
 
 @pytest.mark.anyio
