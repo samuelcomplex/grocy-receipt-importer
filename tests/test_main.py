@@ -4,6 +4,7 @@ from decimal import Decimal
 import io
 
 import app.main as main
+import app.product_service as product_service
 from app.product_matching import normalize_product_name, token_match_score
 
 
@@ -1090,18 +1091,25 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
             {"id": 5, "name": "piece"},
         ],
     )
+    conversion_list = [
+        {
+            "id": 123,
+            "from_qu_id": 3,
+            "to_qu_id": 5,
+            "factor": 1,
+            "product_id": 99,
+        }
+    ]
+
     monkeypatch.setattr(
         main,
         "load_quantity_unit_conversions",
-        lambda: [
-            {
-                "id": 123,
-                "from_qu_id": 3,
-                "to_qu_id": 5,
-                "factor": 1,
-                "product_id": 99,
-            }
-        ],
+        lambda: conversion_list,
+    )
+    monkeypatch.setattr(
+        product_service,
+        "load_quantity_unit_conversions",
+        lambda: conversion_list,
     )
 
     updated_conversion_calls = []
@@ -1111,7 +1119,7 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
         return {"id": conversion_id, **payload}
 
     monkeypatch.setattr(
-        main,
+        product_service,
         "update_quantity_unit_conversion",
         fake_update_conversion,
     )
@@ -1123,17 +1131,11 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
             "name": payload["name"],
         }
 
-    def fake_create_conversion(payload):
-        created_conversion_calls.append(payload)
-        return {
-            "created_object_id": 123,
-        }
-
     def fake_import(path, payload):
         stock_calls.append((path, payload))
         return [{"transaction_id": 555}]
 
-    monkeypatch.setattr(main, "create_product", fake_create_product)
+    monkeypatch.setattr(product_service, "create_product", fake_create_product)
     monkeypatch.setattr(main, "grocy_post", fake_import)
     monkeypatch.setattr(
         main,
@@ -1249,9 +1251,10 @@ async def test_import_new_product_same_unit_does_not_create_conversion(monkeypat
         lambda: [{"id": 2, "name": "piece"}],
     )
     monkeypatch.setattr(main, "load_quantity_unit_conversions", lambda: [])
+    monkeypatch.setattr(product_service, "load_quantity_unit_conversions", lambda: [])
 
     monkeypatch.setattr(
-        main,
+        product_service,
         "create_product",
         lambda payload: (
             created_product_calls.append(payload)
@@ -1328,28 +1331,35 @@ async def test_import_new_product_failure_does_not_save_mapping_or_alias(monkeyp
             {"id": 5, "name": "piece"},
         ],
     )
-    monkeypatch.setattr(
-        main,
-        "load_quantity_unit_conversions",
-        lambda: [
-            {
-                "id": 123,
-                "from_qu_id": 3,
-                "to_qu_id": 5,
-                "factor": 1,
-                "product_id": 101,
-            }
-        ],
-    )
+    conversion_list = [
+        {
+            "id": 123,
+            "from_qu_id": 3,
+            "to_qu_id": 5,
+            "factor": 1,
+            "product_id": 101,
+        }
+    ]
 
     monkeypatch.setattr(
         main,
+        "load_quantity_unit_conversions",
+        lambda: conversion_list,
+    )
+    monkeypatch.setattr(
+        product_service,
+        "load_quantity_unit_conversions",
+        lambda: conversion_list,
+    )
+
+    monkeypatch.setattr(
+        product_service,
         "update_quantity_unit_conversion",
         lambda conversion_id, payload: {"id": conversion_id, **payload},
     )
 
     monkeypatch.setattr(
-        main,
+        product_service,
         "create_product",
         lambda payload: {
             "created_object_id": 101,
