@@ -97,11 +97,14 @@
         name="include_{{ loop.index0 }}"
         id="include-{{ loop.index0 }}"
         data-imported="{{ 'true' if item.status == 'Imported' else 'false' }}"
+        data-new-product-configured="{{ 'true' if item.new_product_config else 'false' }}"
         {% if item.status == "Imported" %}disabled{% endif %}
         {% if item.status != "Imported"
               and item.status != "Skipped"
-              and item.grocy_product_id
-              and item.match_type != "suggested" %}checked{% endif %}
+              and (
+                  (item.grocy_product_id and item.match_type != "suggested")
+                  or item.new_product_config
+              ) %}checked{% endif %}
     >
 {% else %}
     —
@@ -156,11 +159,11 @@
 >
 {% if item.new_product_config %}
 <option value="new" selected>
-    New product — configure
+    New product
 </option>
 {% else %}
 <option value="">{{ t("ui.skip_item") }}</option>
-<option value="new">{{ t("ui.create_new_product") }}</option>
+<option value="new">New product</option>
 {% endif %}
 
 {% if item.grocy_product_id %}
@@ -206,66 +209,11 @@
     {% if not item.new_product_config %}hidden{% endif %}
 >+</button>
 
-{% set selected_existing_product_id = item.grocy_product_id or item.suggested_grocy_product_id %}
-{% set unit_info = product_unit_options.get(selected_existing_product_id|string) if selected_existing_product_id else None %}
-{% if unit_info %}
-<div class="existing-product-units">
-    <div class="small">
-        <strong>{{ t("ui.purchase_unit") }}:</strong>
-        {{ unit_info.purchase_unit_name or unit_info.purchase_unit_id }}
-        ·
-        <strong>{{ t("ui.stock_unit") }}:</strong>
-        {{ unit_info.stock_unit_name or unit_info.stock_unit_id }}
-    </div>
-
-    {% if unit_info.purchase_unit_id != unit_info.stock_unit_id %}
-        {% if unit_info.has_purchase_to_stock_conversion %}
-        <div class="small">
-            1 {{ unit_info.purchase_unit_name or unit_info.purchase_unit_id }}
-            =
-            {{ unit_info.conversion_factor }}
-            {{ unit_info.stock_unit_name or unit_info.stock_unit_id }}
-        </div>
-        {% else %}
-        <div class="small text-danger">
-            No purchase-to-stock conversion configured for this product.
-        </div>
-        {% endif %}
-    {% endif %}
-</div>
-
-<div class="existing-product-import-unit">
-    <label for="import-unit-{{ loop.index0 }}">
-        {{ t("ui.import_unit") }}
-    </label>
-    <select
-        name="import_unit_{{ loop.index0 }}"
-        id="import-unit-{{ loop.index0 }}"
-    >
-        <option value="{{ unit_info.purchase_unit_id }}"
-            {% if not unit_info.has_purchase_to_stock_conversion and unit_info.purchase_unit_id != unit_info.stock_unit_id %}
-            disabled
-            {% else %}
-            selected
-            {% endif %}
-        >
-            {{ unit_info.purchase_unit_name or unit_info.purchase_unit_id }}
-        </option>
-
-        {% if unit_info.stock_unit_id != unit_info.purchase_unit_id %}
-        <option value="{{ unit_info.stock_unit_id }}">
-            {{ unit_info.stock_unit_name or unit_info.stock_unit_id }}
-        </option>
-        {% endif %}
-    </select>
-</div>
-{% endif %}
-
 {% if item.new_product_config %}
 <span
-    class="new-product-staged-icon"
-    title="New product will be created when you import this receipt"
-    aria-label="New product will be created when you import this receipt"
+    class="mapping-indicator mapping-suggested"
+    title="New product is configured and will be created when you import this receipt"
+    aria-label="New product is configured and will be created when you import this receipt"
 >i</span>
 {% endif %}
 
@@ -276,10 +224,6 @@
 {% elif item.create_product_status == "failed" %}
 <div class="new-product-status new-product-status-failed">
     Creation/import failed: {{ item.create_product_error }}
-</div>
-{% elif item.create_product_status == "success" %}
-<div class="new-product-status new-product-status-success">
-    Product created and imported successfully.
 </div>
 {% endif %}
 
@@ -308,7 +252,7 @@
     title="{{ t('ui.suggested_match') }}"
     aria-label="{{ t('ui.suggested_match') }}"
 >●</span>
-{% else %}
+{% elif not item.new_product_config %}
 <span
     class="mapping-indicator mapping-none"
     title="{{ t('ui.no_matching_product') }}"
@@ -669,24 +613,6 @@
     color: var(--parser-accent, var(--text));
 }
 
-.new-product-staged-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    margin-left: 0.5rem;
-    border-radius: 50%;
-    background: #1976d2;
-    color: #fff;
-    font-size: 0.9rem;
-    font-weight: 700;
-    font-family: Arial, sans-serif;
-    line-height: 1;
-    cursor: help;
-    vertical-align: middle;
-}
-
 .new-product-status {
     margin-top: 0.75rem;
     padding: 0.65rem 0.75rem;
@@ -719,11 +645,16 @@ document.querySelectorAll("select[data-include-checkbox]").forEach(function (sel
 
     function updateCheckbox() {
         const skipSelected = select.value === "";
+        const newProductSelected = select.value === "new";
+        const newProductConfigured = checkbox.dataset.newProductConfigured === "true";
         const imported = checkbox.dataset.imported === "true";
 
         if (skipSelected) {
             checkbox.checked = false;
             checkbox.disabled = true;
+        } else if (newProductSelected) {
+            checkbox.checked = newProductConfigured;
+            checkbox.disabled = imported;
         } else if (!imported) {
             checkbox.checked = true;
             checkbox.disabled = false;
@@ -1011,15 +942,6 @@ newProductModalForm.addEventListener("submit", async function (event) {
 
         activeProductSelect.value = "new";
         activeProductSelect.dataset.previousValue = "new";
-
-        const checkbox = document.getElementById(
-            "include-" + activeNewProductIndex
-        );
-
-        if (checkbox) {
-            checkbox.checked = true;
-            checkbox.disabled = false;
-        }
 
         closeNewProductModal(false);
 

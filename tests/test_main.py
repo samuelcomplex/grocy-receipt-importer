@@ -514,6 +514,14 @@ async def test_import_receipt_success(monkeypatch):
     )
     monkeypatch.setattr(
         main,
+        "load_quantity_units",
+        lambda: [
+            {"id": 1, "name": "st"},
+            {"id": 2, "name": "pkt"},
+        ],
+    )
+    monkeypatch.setattr(
+        main,
         "load_quantity_unit_conversions",
         lambda: [],
     )
@@ -583,6 +591,14 @@ async def test_import_receipt_failure_does_not_save_mapping(monkeypatch):
     )
     monkeypatch.setattr(
         main,
+        "load_quantity_units",
+        lambda: [
+            {"id": 1, "name": "st"},
+            {"id": 2, "name": "pkt"},
+        ],
+    )
+    monkeypatch.setattr(
+        main,
         "load_quantity_unit_conversions",
         lambda: [],
     )
@@ -629,6 +645,14 @@ async def test_import_receipt_all_skipped_stays_in_review(monkeypatch):
         main,
         "load_products",
         lambda: [{"id": 42, "name": "Milk"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "load_quantity_units",
+        lambda: [
+            {"id": 1, "name": "st"},
+            {"id": 2, "name": "pkt"},
+        ],
     )
     monkeypatch.setattr(
         main,
@@ -715,6 +739,14 @@ async def test_import_receipt_retries_failed_items_without_reimporting_successes
             "qu_id_purchase": 2,
             "qu_id_stock": 2,
         },
+    )
+    monkeypatch.setattr(
+        main,
+        "load_quantity_units",
+        lambda: [
+            {"id": 1, "name": "st"},
+            {"id": 2, "name": "pkt"},
+        ],
     )
     monkeypatch.setattr(
         main,
@@ -1127,17 +1159,11 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
             "qu_id_consume": 5,
             "qu_id_price": 3,
             "min_stock_amount": 0,
+            "__qu_factor_purchase_to_stock": 2.0,
         },
     ]
 
-    assert created_conversion_calls == [
-        {
-            "from_qu_id": 3,
-            "to_qu_id": 5,
-            "factor": 2.0,
-            "product_id": 99,
-        },
-    ]
+    assert created_conversion_calls == []
 
     assert stock_calls == [
         (

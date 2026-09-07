@@ -703,13 +703,23 @@ async def import_receipt(
 
     try:
         products = load_products()
+        quantity_units = load_quantity_units()
         quantity_unit_conversions = load_quantity_unit_conversions()
+        product_unit_options = build_product_unit_options(
+            products,
+            quantity_units,
+            quantity_unit_conversions,
+        )
         product_names = {
             str(product["id"]): product["name"]
             for product in products
         }
         grocy_error = None
     except Exception as exc:
+        products = []
+        quantity_units = []
+        quantity_unit_conversions = []
+        product_unit_options = {}
         grocy_error = str(exc)
 
         receipt_storage.update(
@@ -1032,6 +1042,9 @@ async def import_receipt(
             "metadata": metadata,
             "items": items,
             "products": products,
+            "quantity_units": quantity_units,
+            "quantity_unit_conversions": quantity_unit_conversions,
+            "product_unit_options": product_unit_options,
             "parser_name": metadata.get(
                 "parser_name",
                 "Unknown",
@@ -1135,6 +1148,7 @@ def build_new_product_payload(
         "qu_id_consume": int(stock_unit_id),
         "qu_id_price": int(purchase_unit_id),
         "min_stock_amount": 0,
+        "__qu_factor_purchase_to_stock": float(conversion),
     }
 
 
@@ -1185,48 +1199,10 @@ def create_new_grocy_product(
             "Grocy created the product but did not return its product ID."
         )
 
-    conversion_payload = build_new_product_conversion_payload(
-        product_id=product_id,
-        purchase_unit_id=purchase_unit_id,
-        stock_unit_id=stock_unit_id,
-        conversion_factor=conversion_factor,
-    )
-
-    if conversion_payload is not None:
-        create_quantity_unit_conversion(conversion_payload)
-
     return {
         "product_id": int(product_id),
         "product": created,
-        "conversion": conversion_payload,
-    }
-
-
-def build_new_product_conversion_payload(
-    product_id,
-    purchase_unit_id,
-    stock_unit_id,
-    conversion_factor,
-):
-    purchase_id = int(purchase_unit_id)
-    stock_id = int(stock_unit_id)
-
-    if purchase_id == stock_id:
-        return None
-
-    try:
-        factor = Decimal(str(conversion_factor))
-    except Exception as exc:
-        raise ValueError("Conversion factor must be a number.") from exc
-
-    if factor <= 0:
-        raise ValueError("Conversion factor must be greater than zero.")
-
-    return {
-        "from_qu_id": purchase_id,
-        "to_qu_id": stock_id,
-        "factor": float(factor),
-        "product_id": int(product_id),
+        "conversion_factor": str(conversion_factor),
     }
 
 

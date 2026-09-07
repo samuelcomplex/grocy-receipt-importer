@@ -30,7 +30,11 @@ def grocy_post(path, payload):
         json=payload,
         timeout=20,
     )
-    response.raise_for_status()
+    if not response.ok:
+        raise requests.HTTPError(
+            f"{response.status_code} {response.reason}: {response.text}",
+            response=response,
+        )
     return response.json()
 
 
