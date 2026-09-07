@@ -1,5 +1,4 @@
 import hashlib
-import difflib
 import io
 import json
 
@@ -12,7 +11,6 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-import requests
 
 from common import money, money_str, quantity
 from app.product_matching import normalize_product_name, suggest_product_matches
@@ -23,7 +21,6 @@ from pypdf import PdfReader
 from plugins.discovery import find_parser
 from app.grocy import (
     create_product,
-    create_quantity_unit_conversion,
     update_quantity_unit_conversion,
     grocy_get,
     grocy_post,
@@ -431,19 +428,12 @@ def review(
         products = load_products()
         locations = load_locations()
         quantity_units = load_quantity_units()
-        quantity_unit_conversions = load_quantity_unit_conversions()
-        product_unit_options = build_product_unit_options(
-            products,
-            quantity_units,
-            quantity_unit_conversions,
-        )
         suggest_product_matches(items, products)
         grocy_error = None
     except Exception as exc:
         products = []
         locations = []
         quantity_units = []
-        quantity_unit_conversions = []
         grocy_error = str(exc)
 
     receipt_storage.update(
@@ -462,8 +452,6 @@ def review(
             "products": products,
             "locations": locations,
             "quantity_units": quantity_units,
-            "quantity_unit_conversions": quantity_unit_conversions,
-            "product_unit_options": product_unit_options,
             "parser_name": parser_name,
             "parser_theme": parser_theme,
             "grocy_error": grocy_error,
@@ -706,11 +694,6 @@ async def import_receipt(
         products = load_products()
         quantity_units = load_quantity_units()
         quantity_unit_conversions = load_quantity_unit_conversions()
-        product_unit_options = build_product_unit_options(
-            products,
-            quantity_units,
-            quantity_unit_conversions,
-        )
         product_names = {
             str(product["id"]): product["name"]
             for product in products
@@ -720,7 +703,6 @@ async def import_receipt(
         products = []
         quantity_units = []
         quantity_unit_conversions = []
-        product_unit_options = {}
         grocy_error = str(exc)
 
         receipt_storage.update(
@@ -1045,7 +1027,6 @@ async def import_receipt(
             "products": products,
             "quantity_units": quantity_units,
             "quantity_unit_conversions": quantity_unit_conversions,
-            "product_unit_options": product_unit_options,
             "parser_name": metadata.get(
                 "parser_name",
                 "Unknown",
@@ -1062,56 +1043,6 @@ async def import_receipt(
             },
         },
     )
-
-
-def build_product_unit_options(
-    products,
-    quantity_units,
-    quantity_unit_conversions,
-):
-    unit_names = {
-        str(unit["id"]): unit["name"]
-        for unit in quantity_units
-    }
-
-    result = {}
-
-    for product in products:
-        product_id = str(product["id"])
-        purchase_unit_id = product.get("qu_id_purchase")
-        stock_unit_id = product.get("qu_id_stock")
-
-        if not purchase_unit_id or not stock_unit_id:
-            continue
-
-        purchase_unit_id = int(purchase_unit_id)
-        stock_unit_id = int(stock_unit_id)
-
-        if purchase_unit_id == stock_unit_id:
-            conversion_factor = Decimal("1")
-        else:
-            conversion = find_purchase_to_stock_conversion(
-                purchase_unit_id=purchase_unit_id,
-                stock_unit_id=stock_unit_id,
-                conversions=quantity_unit_conversions,
-                product_id=int(product_id),
-            )
-            conversion_factor = (
-                conversion["factor"]
-                if conversion is not None
-                else None
-            )
-
-        result[product_id] = {
-            "purchase_unit_id": purchase_unit_id,
-            "purchase_unit_name": unit_names.get(str(purchase_unit_id)),
-            "stock_unit_id": stock_unit_id,
-            "stock_unit_name": unit_names.get(str(stock_unit_id)),
-            "conversion_factor": conversion_factor,
-            "has_purchase_to_stock_conversion": conversion_factor is not None,
-        }
-
-    return result
 
 
 def build_new_product_payload(

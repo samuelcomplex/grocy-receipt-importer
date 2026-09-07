@@ -328,15 +328,6 @@ def test_review_persists_product_suggestions(monkeypatch):
 
     assert result["locations"] == [{"id": 2, "name": "Fridge"}]
     assert result["quantity_units"] == [{"id": 2, "name": "st"}]
-    assert result["quantity_unit_conversions"] == [
-        {
-            "id": 1,
-            "from_qu_id": 3,
-            "to_qu_id": 2,
-            "factor": 12,
-            "product_id": 42,
-        }
-    ]
 
     saved_items = main.json.loads(storage.updated["items_json"])
 
@@ -1143,11 +1134,6 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
         return [{"transaction_id": 555}]
 
     monkeypatch.setattr(main, "create_product", fake_create_product)
-    monkeypatch.setattr(
-        main,
-        "create_quantity_unit_conversion",
-        fake_create_conversion,
-    )
     monkeypatch.setattr(main, "grocy_post", fake_import)
     monkeypatch.setattr(
         main,
@@ -1273,11 +1259,6 @@ async def test_import_new_product_same_unit_does_not_create_conversion(monkeypat
         ),
     )
 
-    monkeypatch.setattr(
-        main,
-        "create_quantity_unit_conversion",
-        lambda payload: created_conversion_calls.append(payload),
-    )
 
     def fake_import(path, payload):
         stock_calls.append((path, payload))
@@ -1374,11 +1355,6 @@ async def test_import_new_product_failure_does_not_save_mapping_or_alias(monkeyp
             "created_object_id": 101,
             "name": payload["name"],
         },
-    )
-    monkeypatch.setattr(
-        main,
-        "create_quantity_unit_conversion",
-        lambda payload: None,
     )
 
     def fail_import(path, payload):
