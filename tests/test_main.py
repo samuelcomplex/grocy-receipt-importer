@@ -1,0 +1,893 @@
+import pytest
+import json
+import io
+
+import app.main as main
+from app.product_matching import normalize_product_name, token_match_score
+
+
+def test_extract_pdf_text(monkeypatch):
+    class FakePage:
+        def __init__(self, text):
+            self.text = text
+
+        def extract_text(self):
+            return self.text
+
+    class FakeReader:
+        def __init__(self, stream):
+            assert isinstance(stream, io.BytesIO)
+            self.pages = [
+                FakePage("Page one"),
+                FakePage(None),
+                FakePage("Page three"),
+            ]
+
+    monkeypatch.setattr(main, "PdfReader", FakeReader)
+
+    assert main.extract_pdf_text(b"fake pdf") == "Page one\n\nPage three"
+
+
+def test_suggest_product_matches_exact():
+    items = [
+        {
+            "kind": "product",
+            "description": "Milk",
+            "grocy_product_id": None,
+        }
+    ]
+
+    products = [
+        {
+            "id": 42,
+            "name": "Milk",
+        }
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 42
+    assert items[0]["suggested_grocy_product_name"] == "Milk"
+    assert items[0]["match_score"] == 1.0
+    assert items[0]["match_type"] == "exact"
+
+
+def test_normalize_product_name_handles_case_and_punctuation():
+    assert normalize_product_name("Milk 1L!") == "milk 1l"
+
+
+def test_normalize_product_name_handles_whitespace():
+    assert normalize_product_name("  Milk   1L  ") == "milk 1l"
+
+
+def test_normalize_product_name_handles_swedish_characters():
+    assert normalize_product_name("MJÖLK") == "mjölk"
+
+
+def test_normalize_product_name_keeps_meaningful_swedish_characters():
+    assert normalize_product_name("Äpple Ångström Ö") == "äpple ångström ö"
+
+
+
+def test_suggest_product_matches_fuzzy_requires_clear_winner():
+    items = [
+        {
+            "kind": "product",
+            "description": "Milk 1L",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "Milk 1LB"},
+        {"id": 99, "name": "Milk 1LT"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert "suggested_grocy_product_id" not in items[0]
+
+def test_suggest_product_matches_token_order():
+    items = [
+        {
+            "kind": "product",
+            "description": "Milk 1L",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "1L Milk"},
+        {"id": 99, "name": "Butter 500g"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 42
+    assert items[0]["suggested_grocy_product_name"] == "1L Milk"
+    assert items[0]["match_type"] == "token"
+    assert items[0]["match_score"] == 1.0
+
+
+def test_suggest_product_matches_token_match_requires_clear_winner():
+    items = [
+        {
+            "kind": "product",
+            "description": "Milk",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "Milk 1L"},
+        {"id": 43, "name": "Milk 1.5L"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert "suggested_grocy_product_id" not in items[0]
+    assert "suggested_grocy_product_name" not in items[0]
+
+
+def test_suggest_product_matches_token_match_handles_extra_product_words():
+    items = [
+        {
+            "kind": "product",
+            "description": "ICA Coffee",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "ICA Coffee Medium Roast 500g"},
+        {"id": 99, "name": "ICA Tea 500g"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 42
+    assert items[0]["match_type"] == "token"
+    assert items[0]["match_score"] == 0.7
+
+
+def test_suggest_product_matches_token_case_and_order():
+    items = [
+        {
+            "kind": "product",
+            "description": "MILK 1L",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "1L Milk Premium"},
+        {"id": 99, "name": "Butter 500g"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 42
+    assert items[0]["match_type"] == "token"
+
+
+def test_suggest_product_matches_token_rejects_generic_overlap():
+    items = [
+        {
+            "kind": "product",
+            "description": "Milk",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "Milk 1L"},
+        {"id": 43, "name": "Chocolate Milk 1L"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert "suggested_grocy_product_id" not in items[0]
+
+
+def test_suggest_product_matches_token_prefers_more_specific_product():
+    items = [
+        {
+            "kind": "product",
+            "description": "Chocolate Milk 1L",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "Milk 1L"},
+        {"id": 43, "name": "Chocolate Milk 1L"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 43
+    assert items[0]["match_type"] == "exact"
+
+
+def test_suggest_product_matches_swedish_product_with_reordered_tokens():
+    items = [
+        {
+            "kind": "product",
+            "description": "ARLA MJÖLK 1.5% 1L",
+        }
+    ]
+    products = [
+        {"id": 42, "name": "1L Arla Mjölk 1.5%"},
+        {"id": 99, "name": "Arla Filmjölk 1L"},
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 42
+    assert items[0]["suggested_grocy_product_name"] == "1L Arla Mjölk 1.5%"
+    assert items[0]["match_type"] == "token"
+
+
+def test_token_match_score_values_product_words_more_than_size():
+    product_word_score = token_match_score(
+        "Arla Mjölk",
+        "Arla Mjölk",
+    )
+    size_only_score = token_match_score(
+        "1L",
+        "Milk 1L",
+    )
+
+    assert product_word_score > size_only_score
+
+
+def test_token_match_score_rewards_multiple_shared_words():
+    one_word_score = token_match_score(
+        "Arla",
+        "Arla Mjölk 1L",
+    )
+    two_word_score = token_match_score(
+        "Arla Mjölk",
+        "Arla Mjölk 1L",
+    )
+
+    assert two_word_score > one_word_score
+
+
+def test_suggest_product_matches_fuzzy():
+    items = [
+        {
+            "kind": "product",
+            "description": "Milc",
+            "grocy_product_id": None,
+        }
+    ]
+
+    products = [
+        {
+            "id": 42,
+            "name": "Milk",
+        }
+    ]
+
+    main.suggest_product_matches(items, products)
+
+    assert items[0]["suggested_grocy_product_id"] == 42
+    assert items[0]["suggested_grocy_product_name"] == "Milk"
+    assert items[0]["match_type"] == "suggested"
+    assert 0.70 <= items[0]["match_score"] <= 1.0
+
+
+def test_review_persists_product_suggestions(monkeypatch):
+    receipt = {
+        "id": "receipt-1",
+        "sha256": "abc123",
+        "filename": "receipt.pdf",
+        "raw_text": "receipt text",
+        "metadata_json": '{"parser_name": "Test"}',
+        "items_json": '[{"kind": "product", "description": "Milk", "grocy_product_id": null}]',
+        "status": "review",
+        "created_at": "2026-09-05T17:00:00",
+    }
+
+    class FakeReceiptStorage:
+        def __init__(self):
+            self.updated = {}
+
+        def get(self, receipt_id):
+            return receipt
+
+        def update(self, receipt_id, **fields):
+            self.updated.update(fields)
+
+    storage = FakeReceiptStorage()
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [{"id": 42, "name": "Milk"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = main.review(None, "receipt-1")
+
+    saved_items = main.json.loads(storage.updated["items_json"])
+
+    assert saved_items[0]["suggested_grocy_product_id"] == 42
+    assert saved_items[0]["suggested_grocy_product_name"] == "Milk"
+    assert result["items"][0]["match_type"] == "exact"
+
+
+def test_apply_saved_mappings():
+    items = [
+        {
+            "kind": "product",
+            "article_number": "1234567",
+            "description": "Milk",
+            "grocy_product_id": None,
+            "grocy_product_name": "",
+        },
+        {
+            "kind": "product",
+            "article_number": "",
+            "description": "Bread",
+            "grocy_product_id": None,
+            "grocy_product_name": "",
+        },
+    ]
+
+    class FakeMappingStorage:
+        def get(self, store_org, article_number):
+            assert store_org == "TEST"
+            if article_number == "1234567":
+                return {
+                    "grocy_product_id": 42,
+                    "grocy_product_name": "Milk",
+                }
+            return None
+
+    main.mapping_storage = FakeMappingStorage()
+
+    main.apply_saved_mappings(
+        {"store_org": "TEST"},
+        items,
+    )
+
+    assert items[0]["grocy_product_id"] == 42
+    assert items[0]["grocy_product_name"] == "Milk"
+    assert items[1]["grocy_product_id"] is None
+
+
+def test_determine_receipt_status():
+    assert main.determine_receipt_status(0, 3, 0) == "review"
+    assert main.determine_receipt_status(3, 0, 0) == "imported"
+    assert main.determine_receipt_status(2, 1, 0) == "partial"
+    assert main.determine_receipt_status(0, 2, 1) == "partial"
+    assert main.determine_receipt_status(2, 0, 1) == "partial"
+
+
+def make_import_receipt():
+    return {
+        "id": "receipt-1",
+        "sha256": "abc123",
+        "filename": "receipt.pdf",
+        "raw_text": "receipt text",
+        "metadata_json": json.dumps({
+            "store_org": "TEST",
+            "date": "2026-09-05",
+            "receipt_no": "12345",
+            "parser_name": "Test",
+        }),
+        "items_json": json.dumps([
+            {
+                "kind": "product",
+                "article_number": "123",
+                "description": "Milk",
+                "quantity": "2",
+                "unit": "st",
+                "gross": "30.00",
+                "discount": "0.00",
+                "net": "30.00",
+            },
+        ]),
+        "status": "review",
+        "created_at": "2026-09-05T17:00:00",
+    }
+
+
+class FakeImportReceiptStorage:
+    def __init__(self, receipt):
+        self.receipt = receipt
+        self.updates = []
+
+    def get(self, receipt_id):
+        return self.receipt
+
+    def update(self, receipt_id, **fields):
+        self.updates.append(fields)
+        self.receipt.update(fields)
+
+
+class FakeMappingStorage:
+    def __init__(self):
+        self.saved = []
+
+    def save(
+        self,
+        store_org,
+        article_number,
+        grocy_product_id,
+        grocy_product_name,
+    ):
+        self.saved.append(
+            (
+                store_org,
+                article_number,
+                grocy_product_id,
+                grocy_product_name,
+            )
+        )
+
+
+class FakeFormRequest:
+    def __init__(self, values):
+        self.values = values
+
+    async def form(self):
+        return self.values
+
+
+@pytest.mark.anyio
+async def test_import_receipt_success(monkeypatch):
+    storage = FakeImportReceiptStorage(make_import_receipt())
+    mappings = FakeMappingStorage()
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [{"id": 42, "name": "Milk"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "grocy_post",
+        lambda path, payload: [
+            {"transaction_id": 99},
+        ],
+    )
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+        }),
+        "receipt-1",
+    )
+
+    item = result["items"][0]
+
+    assert item["status"] == "Imported"
+    assert item["grocy_product_id"] == 42
+    assert item["grocy_product_name"] == "Milk"
+    assert item["transaction_id"] == "99"
+
+    assert mappings.saved == [
+        ("TEST", "123", 42, "Milk"),
+    ]
+
+    assert result["import_summary"] == {
+        "imported": 1,
+        "skipped": 0,
+        "failed": 0,
+    }
+
+    assert storage.receipt["status"] == "imported"
+
+
+@pytest.mark.anyio
+async def test_import_receipt_failure_does_not_save_mapping(monkeypatch):
+    storage = FakeImportReceiptStorage(make_import_receipt())
+    mappings = FakeMappingStorage()
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [{"id": 42, "name": "Milk"}],
+    )
+
+    def fail_import(path, payload):
+        raise RuntimeError("Grocy unavailable")
+
+    monkeypatch.setattr(main, "grocy_post", fail_import)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+        }),
+        "receipt-1",
+    )
+
+    item = result["items"][0]
+
+    assert item["status"] == "Failed"
+    assert item["error"] == "Grocy unavailable"
+    assert mappings.saved == []
+
+    assert result["import_summary"] == {
+        "imported": 0,
+        "skipped": 0,
+        "failed": 1,
+    }
+
+    assert storage.receipt["status"] == "partial"
+
+
+@pytest.mark.anyio
+async def test_import_receipt_all_skipped_stays_in_review(monkeypatch):
+    storage = FakeImportReceiptStorage(make_import_receipt())
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [{"id": 42, "name": "Milk"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({}),
+        "receipt-1",
+    )
+
+    assert result["import_summary"] == {
+        "imported": 0,
+        "skipped": 1,
+        "failed": 0,
+    }
+
+    assert result["items"][0]["status"] == "Skipped"
+    assert storage.receipt["status"] == "review"
+
+
+@pytest.mark.anyio
+async def test_import_receipt_retries_failed_items_without_reimporting_successes(
+    monkeypatch,
+):
+    receipt = make_import_receipt()
+    receipt["items_json"] = json.dumps([
+        {
+            "kind": "product",
+            "article_number": "123",
+            "description": "Milk",
+            "quantity": "2",
+            "unit": "st",
+            "gross": "30.00",
+            "discount": "0.00",
+            "net": "30.00",
+            "status": "Imported",
+            "grocy_product_id": 42,
+            "grocy_product_name": "Milk",
+            "transaction_id": "100",
+        },
+        {
+            "kind": "product",
+            "article_number": "456",
+            "description": "Bread",
+            "quantity": "1",
+            "unit": "st",
+            "gross": "20.00",
+            "discount": "0.00",
+            "net": "20.00",
+            "status": "Failed",
+            "error": "Previous failure",
+        },
+    ])
+    receipt["status"] = "partial"
+
+    storage = FakeImportReceiptStorage(receipt)
+    mappings = FakeMappingStorage()
+    grocy_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [
+            {"id": 42, "name": "Milk"},
+            {"id": 84, "name": "Bread"},
+        ],
+    )
+
+    def fake_import(path, payload):
+        grocy_calls.append((path, payload))
+        return [{"transaction_id": 200}]
+
+    monkeypatch.setattr(main, "grocy_post", fake_import)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+            "include_1": "on",
+            "product_1": "84",
+        }),
+        "receipt-1",
+    )
+
+    assert len(grocy_calls) == 1
+    assert grocy_calls[0][0] == "/api/stock/products/84/add"
+
+    assert result["items"][0]["transaction_id"] == "100"
+    assert result["items"][0]["status"] == "Imported"
+
+    assert result["items"][1]["status"] == "Imported"
+    assert result["items"][1]["transaction_id"] == "200"
+    assert "error" not in result["items"][1]
+
+    assert result["import_summary"] == {
+        "imported": 1,
+        "skipped": 0,
+        "failed": 0,
+    }
+
+    assert storage.receipt["status"] == "imported"
+
+    assert mappings.saved == [
+        ("TEST", "456", 84, "Bread"),
+    ]
+
+
+class FakeUndoReceiptStorage:
+    def __init__(self, receipt):
+        self.receipt = receipt
+        self.updates = []
+
+    def get(self, receipt_id):
+        return self.receipt
+
+    def update(self, receipt_id, **fields):
+        self.updates.append(fields)
+        self.receipt.update(fields)
+
+
+def make_imported_receipt(items):
+    receipt = make_import_receipt()
+    receipt["items_json"] = json.dumps(items)
+    receipt["status"] = "imported"
+    return receipt
+
+
+@pytest.mark.anyio
+async def test_undo_import_success(monkeypatch):
+    receipt = make_imported_receipt([
+        {
+            "kind": "product",
+            "article_number": "123",
+            "description": "Milk",
+            "status": "Imported",
+            "transaction_id": "99",
+            "grocy_product_id": 42,
+            "grocy_product_name": "Milk",
+        },
+    ])
+    storage = FakeUndoReceiptStorage(receipt)
+    calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_post_no_content",
+        lambda path, payload: calls.append((path, payload)),
+    )
+
+    result = await main.undo_import(None, "receipt-1", 0)
+
+    assert calls == [
+        ("/api/stock/transactions/99/undo", {}),
+    ]
+
+    saved_items = json.loads(storage.updates[-1]["items_json"])
+    item = saved_items[0]
+
+    assert item["status"] == "Undone"
+    assert item["undo_transaction_id"] == "99"
+    assert "transaction_id" not in item
+    assert "error" not in item
+    assert storage.updates[-1]["status"] == "undone"
+
+    assert result.status_code == 303
+
+
+@pytest.mark.anyio
+async def test_undo_import_keeps_partial_receipt_status(monkeypatch):
+    receipt = make_imported_receipt([
+        {
+            "kind": "product",
+            "article_number": "123",
+            "description": "Milk",
+            "status": "Imported",
+            "transaction_id": "99",
+        },
+        {
+            "kind": "product",
+            "article_number": "456",
+            "description": "Bread",
+            "status": "Imported",
+            "transaction_id": "100",
+        },
+    ])
+    storage = FakeUndoReceiptStorage(receipt)
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_post_no_content",
+        lambda path, payload: None,
+    )
+
+    result = await main.undo_import(None, "receipt-1", 0)
+
+    saved_items = json.loads(storage.updates[-1]["items_json"])
+
+    assert saved_items[0]["status"] == "Undone"
+    assert saved_items[1]["status"] == "Imported"
+    assert storage.updates[-1]["status"] == "partial"
+    assert result.status_code == 303
+
+
+@pytest.mark.anyio
+async def test_undo_import_rejects_non_imported_item(monkeypatch):
+    receipt = make_imported_receipt([
+        {
+            "kind": "product",
+            "article_number": "123",
+            "description": "Milk",
+            "status": "Failed",
+        },
+    ])
+    storage = FakeUndoReceiptStorage(receipt)
+    calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_post_no_content",
+        lambda path, payload: calls.append(path),
+    )
+
+    result = await main.undo_import(None, "receipt-1", 0)
+
+    assert result.status_code == 400
+    assert calls == []
+    assert storage.updates == []
+
+
+@pytest.mark.anyio
+async def test_undo_import_failure_preserves_imported_state(monkeypatch):
+    receipt = make_imported_receipt([
+        {
+            "kind": "product",
+            "article_number": "123",
+            "description": "Milk",
+            "status": "Imported",
+            "transaction_id": "99",
+        },
+    ])
+    storage = FakeUndoReceiptStorage(receipt)
+
+    def fail_undo(path, payload):
+        raise RuntimeError("Grocy undo unavailable")
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "grocy_post_no_content", fail_undo)
+
+    result = await main.undo_import(None, "receipt-1", 0)
+
+    saved_items = json.loads(storage.updates[-1]["items_json"])
+    item = saved_items[0]
+
+    assert result.status_code == 502
+    assert item["status"] == "Imported"
+    assert item["transaction_id"] == "99"
+    assert item["error"] == "Undo failed: Grocy undo unavailable"
+    assert "status" not in storage.updates[-1]
+
+
+@pytest.mark.anyio
+async def test_undo_import_missing_receipt():
+    class EmptyReceiptStorage:
+        def get(self, receipt_id):
+            return None
+
+    original = main.receipt_storage
+    main.receipt_storage = EmptyReceiptStorage()
+
+    try:
+        result = await main.undo_import(None, "missing", 0)
+    finally:
+        main.receipt_storage = original
+
+    assert result.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_import_saved_mapping_works_when_grocy_product_list_unavailable(
+    monkeypatch,
+):
+    receipt = make_import_receipt()
+    receipt["items_json"] = json.dumps([
+        {
+            "kind": "product",
+            "article_number": "123",
+            "description": "Milk",
+            "quantity": "2",
+            "unit": "st",
+            "gross": "30.00",
+            "discount": "0.00",
+            "net": "30.00",
+            "grocy_product_id": 42,
+            "grocy_product_name": "Milk",
+            "match_type": "saved",
+        },
+    ])
+
+    storage = FakeImportReceiptStorage(receipt)
+    mappings = FakeMappingStorage()
+    calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+
+    def fail_load_products():
+        raise RuntimeError("Grocy product list unavailable")
+
+    monkeypatch.setattr(main, "load_products", fail_load_products)
+
+    def fake_import(path, payload):
+        calls.append((path, payload))
+        return [{"transaction_id": 123}]
+
+    monkeypatch.setattr(main, "grocy_post", fake_import)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+        }),
+        "receipt-1",
+    )
+
+    item = result["items"][0]
+
+    assert item["status"] == "Imported"
+    assert item["grocy_product_id"] == 42
+    assert item["grocy_product_name"] == "Milk"
+    assert item["transaction_id"] == "123"
+
+    assert calls[0][0] == "/api/stock/products/42/add"
+    assert result["import_summary"] == {
+        "imported": 1,
+        "skipped": 0,
+        "failed": 0,
+    }
+    assert storage.receipt["status"] == "imported"

@@ -124,8 +124,6 @@ class ICAParser(ReceiptParser):
                         "discount": "0,00",
                         "net": money_str(gross),
                         "kind": "product",
-                        "grocy_product_id": None,
-                        "grocy_product_name": "",
                     })
 
                     continue
@@ -146,8 +144,6 @@ class ICAParser(ReceiptParser):
                         "discount": "0,00",
                         "net": money_str(amount),
                         "kind": "deposit",
-                        "grocy_product_id": None,
-                        "grocy_product_name": "",
                     })
 
                     continue

@@ -55,7 +55,7 @@ def matches(self, text: str) -> bool:
     )
 ```
 
-Do not add retailer-specific checks to `app.py`.
+Do not add retailer-specific checks to `app/main.py`.
 
 ## `parse()`
 
@@ -118,7 +118,7 @@ plugins/
 
 Implement a `ReceiptParser` subclass in the new file.
 
-The application discovers parser classes automatically, so normally no changes to `app.py` or a central registry are required.
+The application discovers parser classes automatically, so normally no changes to `app/main.py` or a central registry are required.
 
 ## Parser discovery
 

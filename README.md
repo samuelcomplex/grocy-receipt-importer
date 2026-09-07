@@ -174,7 +174,7 @@ For local development without Docker:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn app.main:app --reload
 ```
 
 For normal deployment, Docker Compose is recommended.

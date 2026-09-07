@@ -19,15 +19,14 @@
 
 <p>
 <strong>{{ metadata.store_name }}</strong><br>
-{{ metadata.address }}
+{{ metadata.store_address }}
 </p>
 
 <p>
 <strong>{{ t("ui.date") }}:</strong> {{ metadata.date }}
 · <strong>{{ t("ui.time") }}:</strong> {{ metadata.time }}
-· <strong>{{ t("ui.register") }}:</strong> {{ metadata.register }}
 · <strong>{{ t("ui.organization_number") }}:</strong> {{ metadata.store_org }}
-· <strong>{{ t("ui.receipt_number") }}:</strong> {{ metadata.receipt_no }}
+· <strong>{{ t("ui.receipt_number") }}:</strong> {{ metadata.receipt_number }}
 </p>
 
 {% if grocy_error %}
@@ -337,6 +336,8 @@ document.querySelectorAll("select[data-include-checkbox]").forEach(function (sel
 
     select.addEventListener("change", updateCheckbox);
     updateCheckbox();
+});
+
 });
 
 anotherFileButton.addEventListener("click", function (event) {

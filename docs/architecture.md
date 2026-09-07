@@ -253,7 +253,7 @@ The Docker image contains the application code, templates, plugins, and translat
 
 ```text
 /app
-├── app.py
+├── app/main.py
 ├── common.py
 ├── plugins/
 ├── templates/
