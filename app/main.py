@@ -1,46 +1,37 @@
 import hashlib
 import io
 import json
+import uuid
+from datetime import datetime
 
 from app.config import (
     MAPPING_STORAGE,
     RECEIPT_STORAGE,
 )
-import re
-import uuid
-from datetime import datetime
-from decimal import Decimal
-
-
-from common import money, money_str, quantity
-from app.product_matching import normalize_product_name, suggest_product_matches
-from app.product_service import (
-    build_new_product_payload,
-    calculate_stock_amount,
-    create_new_grocy_product,
-    find_purchase_to_stock_conversion,
-    purchase_to_stock_factor,
-    validate_new_product_configuration,
-)
-from app.receipt_model import receipt_from_parser_output, receipt_from_storage
-from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
-from pypdf import PdfReader
-from plugins.discovery import find_parser
 from app.grocy import (
-    create_product,
-    update_quantity_unit_conversion,
-    grocy_get,
     grocy_post,
-    load_product,
     grocy_post_no_content,
     load_locations,
+    load_product,
     load_products,
     load_quantity_unit_conversions,
     load_quantity_units,
 )
+from app.product_matching import normalize_product_name, suggest_product_matches
+from app.product_service import (
+    calculate_stock_amount,
+    create_new_grocy_product,
+    validate_new_product_configuration,
+)
+from app.receipt_model import receipt_from_parser_output, receipt_from_storage
 from app.storage import create_alias_storage, create_mapping_storage, create_receipt_storage
 from app.web import render_template
+from common import money
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pypdf import PdfReader
+from plugins.discovery import find_parser
+
 
 def create_storages():
     return (

@@ -1418,7 +1418,7 @@ async def test_import_aborts_when_grocy_product_list_cannot_be_loaded(monkeypatc
     )
 
     monkeypatch.setattr(
-        main,
+        product_service,
         "create_product",
         lambda payload: (
             created_product_calls.append(payload)
