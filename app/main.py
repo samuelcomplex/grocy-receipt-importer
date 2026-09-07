@@ -48,6 +48,14 @@ def get_receipt(receipt_id):
     return receipt_storage.get(receipt_id)
 
 
+def json_response(payload, status_code=200):
+    return HTMLResponse(
+        json.dumps(payload),
+        status_code=status_code,
+        media_type="application/json",
+    )
+
+
 def initialize_item_state(items):
     for item in items:
         item.setdefault("grocy_product_id", None)
@@ -483,35 +491,32 @@ async def stage_new_product(
     try:
         item_index = int(form.get("item_index", ""))
     except (TypeError, ValueError):
-        return HTMLResponse(
-            json.dumps({
+        return json_response(
+            {
                 "ok": False,
-                "error": "Invalid receipt item."
-            }),
+                "error": "Invalid receipt item.",
+            },
             status_code=400,
-            media_type="application/json",
         )
 
     if item_index < 0 or item_index >= len(items):
-        return HTMLResponse(
-            json.dumps({
+        return json_response(
+            {
                 "ok": False,
-                "error": "Receipt item not found."
-            }),
+                "error": "Receipt item not found.",
+            },
             status_code=404,
-            media_type="application/json",
         )
 
     item = items[item_index]
 
     if item.get("kind") != "product":
-        return HTMLResponse(
-            json.dumps({
+        return json_response(
+            {
                 "ok": False,
-                "error": "Only product items can create a new Grocy product."
-            }),
+                "error": "Only product items can create a new Grocy product.",
+            },
             status_code=400,
-            media_type="application/json",
         )
 
     name = form.get("name")
@@ -569,16 +574,15 @@ async def stage_new_product(
             ),
         )
 
-        return HTMLResponse(
-            json.dumps({
+        return json_response(
+            {
                 "ok": True,
                 "name": product_payload["name"],
                 "location_name": location_names[str(location_id)],
                 "purchase_unit_name": unit_names[str(purchase_unit_id)],
                 "stock_unit_name": unit_names[str(stock_unit_id)],
                 "conversion_factor": str(conversion_factor),
-            }),
-            media_type="application/json",
+            }
         )
 
     except Exception as exc:
@@ -593,13 +597,12 @@ async def stage_new_product(
             ),
         )
 
-        return HTMLResponse(
-            json.dumps({
+        return json_response(
+            {
                 "ok": False,
                 "error": str(exc),
-            }),
+            },
             status_code=400,
-            media_type="application/json",
         )
 
 
