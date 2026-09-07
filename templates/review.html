@@ -138,6 +138,7 @@
 
 <div
     class="product-selection"
+    data-receipt-description="{{ item.description }}"
     {% if item.unit %}data-receipt-unit="{{ item.unit }}"{% endif %}
     {% if item.new_product_config %}
     data-new-product-name="{{ item.new_product_config.name }}"
@@ -198,16 +199,12 @@
 
 <button
     type="button"
-    class="secondary-button configure-new-product-button"
+    class="configure-new-product-button"
     data-item-index="{{ loop.index0 }}"
+    title="{% if item.new_product_config %}Reconfigure new product{% else %}Configure new product{% endif %}"
+    aria-label="{% if item.new_product_config %}Reconfigure new product{% else %}Configure new product{% endif %}"
     {% if not item.new_product_config %}hidden{% endif %}
->
-    {% if item.new_product_config %}
-        ✨ Reconfigure new product
-    {% else %}
-        ✨ Configure new product
-    {% endif %}
-</button>
+>+</button>
 
 {% set selected_existing_product_id = item.grocy_product_id or item.suggested_grocy_product_id %}
 {% set unit_info = product_unit_options.get(selected_existing_product_id|string) if selected_existing_product_id else None %}
@@ -583,8 +580,10 @@
     box-sizing: border-box;
     padding: 1.25rem;
     border-radius: 8px;
-    background: var(--background-color, #fff);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 40px var(--shadow);
 }
 
 .new-product-modal-header {
@@ -602,6 +601,7 @@
 .new-product-modal-close {
     border: 0;
     background: transparent;
+    color: var(--text);
     font-size: 1.75rem;
     line-height: 1;
     cursor: pointer;
@@ -618,6 +618,11 @@
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    background: var(--input-background);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
 }
 
 .new-product-modal-conversion {
@@ -641,8 +646,8 @@
     margin: 1rem 0;
     padding: 0.75rem;
     border-radius: 6px;
-    background: #fce8e6;
-    color: #a50e0e;
+    background: color-mix(in srgb, var(--error) 15%, var(--surface));
+    color: var(--error);
 }
 
 .new-product-modal-actions {
@@ -653,7 +658,24 @@
 }
 
 .configure-new-product-button {
-    margin-top: 0.5rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    margin-left: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--button-background);
+    color: var(--text);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.configure-new-product-button:hover,
+.configure-new-product-button:focus-visible {
+    border-color: var(--parser-accent, var(--border));
+    color: var(--parser-accent, var(--text));
 }
 
 .new-product-staged {
@@ -662,9 +684,9 @@
     gap: 0.6rem;
     margin-top: 0.75rem;
     padding: 0.75rem;
-    border: 1px solid #b8860b;
+    border: 1px solid var(--warning);
     border-radius: 6px;
-    background: #fff8dc;
+    background: color-mix(in srgb, var(--warning) 12%, var(--surface));
 }
 
 .new-product-staged-icon {
@@ -683,13 +705,13 @@
 }
 
 .new-product-status-failed {
-    background: #fce8e6;
-    color: #a50e0e;
+    background: color-mix(in srgb, var(--error) 15%, var(--surface));
+    color: var(--error);
 }
 
 .new-product-status-success {
-    background: #e6f4ea;
-    color: #137333;
+    background: color-mix(in srgb, var(--success) 15%, var(--surface));
+    color: var(--success);
 }
 </style>
 
@@ -744,10 +766,6 @@ document.querySelectorAll("select[id^=\"product-\"]").forEach(function (select) 
     }
 
     select.addEventListener("change", function () {
-        if (select.value === "new") {
-            openNewProductModal(index, select);
-        }
-
         updateNewProductUI();
     });
 
@@ -848,7 +866,9 @@ function openNewProductModal(index, productSelect) {
 
     nameInput.value = row && row.dataset.newProductName
         ? row.dataset.newProductName
-        : "";
+        : (row && row.dataset.receiptDescription
+            ? row.dataset.receiptDescription
+            : "");
 
     const receiptUnit = row
         ? row.dataset.receiptUnit
