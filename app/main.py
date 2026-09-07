@@ -952,14 +952,10 @@ async def import_receipt(
                 )
             ):
                 item["create_product_status"] = "missing"
-                item["create_product_error"] = str(exc)
-            elif item.get("new_product_config"):
-                item["create_product_status"] = "failed"
-                item["create_product_error"] = str(exc)
             else:
                 item["create_product_status"] = "failed"
-                item["create_product_error"] = str(exc)
 
+            item["create_product_error"] = str(exc)
             failed += 1
 
     receipt_storage.update(
