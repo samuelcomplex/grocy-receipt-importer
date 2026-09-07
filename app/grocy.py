@@ -49,3 +49,19 @@ def grocy_post_no_content(path, payload):
 
 def load_products():
     return grocy_get("/api/objects/products")
+
+
+def load_locations():
+    return grocy_get("/api/objects/locations")
+
+
+def load_quantity_units():
+    return grocy_get("/api/objects/quantity_units")
+
+
+def load_quantity_unit_conversions():
+    return grocy_get("/api/objects/quantity_unit_conversions")
+
+
+def create_product(payload):
+    return grocy_post("/api/objects/products", payload)
