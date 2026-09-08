@@ -895,6 +895,32 @@ async def import_receipt(
 
             transaction_id = transaction_ids.pop()
 
+            # Only persist mappings when the receipt identifies the retailer.
+            # A missing store_org must never result in a NULL store key.
+            # Persist the alias before the article mapping so a failed alias
+            # save cannot leave behind a new article mapping.
+            store_org = metadata.get("store_org")
+
+            normalized_description = normalize_product_name(
+                item.get("description", "")
+            )
+
+            if store_org and normalized_description:
+                alias_storage.save(
+                    store_org,
+                    normalized_description,
+                    int(selected_product_id),
+                    product_name,
+                )
+
+            if store_org and article_number:
+                mapping_storage.save(
+                    store_org,
+                    article_number,
+                    int(selected_product_id),
+                    product_name,
+                )
+
             item["status"] = "Imported"
             item["grocy_product_id"] = int(selected_product_id)
             item["grocy_product_name"] = product_name
@@ -910,28 +936,6 @@ async def import_receipt(
                 item.pop("new_product_config", None)
                 item.pop("new_product_status", None)
                 item.pop("new_product_error", None)
-
-            # Only persist the article mapping after the stock transaction
-            # succeeded. A failed import must never create a saved mapping.
-            if article_number:
-                mapping_storage.save(
-                    metadata.get("store_org", ""),
-                    article_number,
-                    int(selected_product_id),
-                    product_name,
-                )
-
-            normalized_description = normalize_product_name(
-                item.get("description", "")
-            )
-
-            if normalized_description:
-                alias_storage.save(
-                    metadata.get("store_org", ""),
-                    normalized_description,
-                    int(selected_product_id),
-                    product_name,
-                )
 
             imported += 1
 

@@ -1208,6 +1208,123 @@ async def test_import_receipt_creates_new_product_with_conversion(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_import_does_not_save_mapping_when_alias_save_fails(monkeypatch):
+    receipt = make_import_receipt()
+    storage = FakeImportReceiptStorage(receipt)
+    mappings = FakeMappingStorage()
+    aliases = FakeAliasStorage()
+    stock_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+    monkeypatch.setattr(main, "alias_storage", aliases)
+
+    monkeypatch.setattr(main, "load_products", lambda: [
+        {
+            "id": 42,
+            "name": "Milk",
+            "qu_id_purchase": 2,
+            "qu_id_stock": 2,
+        },
+    ])
+    monkeypatch.setattr(main, "load_quantity_units", lambda: [
+        {"id": 2, "name": "st"},
+    ])
+    monkeypatch.setattr(main, "load_quantity_unit_conversions", lambda: [])
+
+    def fake_import(path, payload):
+        stock_calls.append((path, payload))
+        return [{"transaction_id": 123}]
+
+    def failing_alias_save(*args):
+        raise RuntimeError("alias storage failed")
+
+    monkeypatch.setattr(main, "grocy_post", fake_import)
+    monkeypatch.setattr(aliases, "save", failing_alias_save)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+        }),
+        "receipt-1",
+    )
+
+    item = result["items"][0]
+
+    assert item["status"] == "Failed"
+    assert item["error"] == "alias storage failed"
+    assert stock_calls
+    assert mappings.saved == []
+
+
+@pytest.mark.anyio
+async def test_import_without_store_org_does_not_save_mappings_or_aliases(monkeypatch):
+    receipt = make_import_receipt()
+    receipt["metadata_json"] = json.dumps({
+        "store_org": None,
+        "date": "2026-09-05",
+        "receipt_no": "12345",
+        "parser_name": "Test",
+    })
+
+    storage = FakeImportReceiptStorage(receipt)
+    mappings = FakeMappingStorage()
+    aliases = FakeAliasStorage()
+    stock_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+    monkeypatch.setattr(main, "alias_storage", aliases)
+
+    monkeypatch.setattr(main, "load_products", lambda: [
+        {
+            "id": 42,
+            "name": "Milk",
+            "qu_id_purchase": 2,
+            "qu_id_stock": 2,
+        },
+    ])
+    monkeypatch.setattr(main, "load_quantity_units", lambda: [
+        {"id": 2, "name": "st"},
+    ])
+    monkeypatch.setattr(main, "load_quantity_unit_conversions", lambda: [])
+
+    def fake_import(path, payload):
+        stock_calls.append((path, payload))
+        return [{"transaction_id": 123}]
+
+    monkeypatch.setattr(main, "grocy_post", fake_import)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = await main.import_receipt(
+        FakeFormRequest({
+            "include_0": "on",
+            "product_0": "42",
+        }),
+        "receipt-1",
+    )
+
+    item = result["items"][0]
+
+    assert item["status"] == "Imported"
+    assert item["grocy_product_id"] == 42
+    assert item["transaction_id"] == "123"
+    assert stock_calls
+    assert mappings.saved == []
+    assert aliases.saved == []
+
+
+@pytest.mark.anyio
 async def test_import_preserves_decimal_net_price(monkeypatch):
     receipt = make_import_receipt()
     receipt["items_json"] = json.dumps([

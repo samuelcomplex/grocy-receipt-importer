@@ -1,6 +1,6 @@
 # Grocy Receipt Importer
 
-**Version 0.3.2**
+**Version 0.3.3**
 
 A self-hosted web application that extracts receipt data from PDF files, lets you review and map products, and imports selected items into [Grocy](https://grocy.info/).
 

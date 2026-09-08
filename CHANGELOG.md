@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-08
+
+### Fixed
+
+- Prevented receipt imports without a retailer store organization from failing when saving product mappings and aliases.
+
+
 ## [0.3.2] - 2026-09-08
 
 ### Added
