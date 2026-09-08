@@ -93,6 +93,16 @@ def receipt_from_parser_output(data, retailer):
     )
 
 
+def _normalize_stored_item(item):
+    normalized = dict(item)
+
+    for field in ("quantity", "unit_price", "gross", "discount", "net"):
+        if field in normalized:
+            normalized[field] = _decimal(normalized[field])
+
+    return normalized
+
+
 def receipt_from_storage(row):
     metadata = json.loads(row["metadata_json"])
     items = json.loads(row["items_json"])
@@ -106,5 +116,5 @@ def receipt_from_storage(row):
         time=_parse_time(metadata.get("time")),
         receipt_number=metadata.get("receipt_number") or metadata.get("receipt_no"),
         cashier=metadata.get("cashier"),
-        items=[ReceiptItem.model_validate(item) for item in items],
+        items=[ReceiptItem.model_validate(_normalize_stored_item(item)) for item in items],
     )
