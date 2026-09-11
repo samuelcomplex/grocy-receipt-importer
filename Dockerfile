@@ -2,6 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+LABEL org.opencontainers.image.source="https://github.com/samuelcomplex/grocy-receipt-importer"
+
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
