@@ -435,15 +435,43 @@
                         title="Add storage location"
                     >+</button>
                 </div>
-                <label class="new-product-modal-checkbox">
+                <div
+                    id="new-product-location-creator"
+                    class="new-product-modal-inline-creator"
+                    hidden
+                >
+                    <label for="modal-new-product-location-name">
+                        New storage location
+                    </label>
                     <input
-                        type="checkbox"
-                        id="modal-new-product-location-freezer"
-                        name="is_freezer"
-                        value="true"
+                        type="text"
+                        id="modal-new-product-location-name"
+                        autocomplete="off"
                     >
-                    Is freezer
-                </label>
+                    <label class="new-product-modal-checkbox">
+                        <input
+                            type="checkbox"
+                            id="modal-new-product-location-freezer"
+                        >
+                        Is freezer
+                    </label>
+                    <div class="new-product-modal-inline-creator-actions">
+                        <button
+                            type="button"
+                            class="secondary-button"
+                            id="modal-new-product-location-cancel"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            class="primary-button"
+                            id="modal-new-product-location-create"
+                        >
+                            Create
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div class="new-product-modal-field">
@@ -782,6 +810,24 @@
     gap: 0.5rem;
 }
 
+.new-product-modal-inline-creator {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--input-background);
+}
+
+.new-product-modal-inline-creator-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+
 .new-product-modal-inline-field select {
     flex: 1;
     min-width: 0;
@@ -1024,6 +1070,9 @@ function openNewProductModal(index, productSelect) {
     const stockUnit = document.getElementById(
         "modal-new-product-stock-unit"
     );
+    const productGroup = document.getElementById(
+        "modal-new-product-group"
+    );
 
     nameInput.value = row && row.dataset.newProductName
         ? row.dataset.newProductName
@@ -1037,6 +1086,13 @@ function openNewProductModal(index, productSelect) {
 
     selectUnitByReceiptUnit(purchaseUnit, receiptUnit);
     stockUnit.value = purchaseUnit.value;
+    productGroup.value = "";
+
+    if (newProductLocationCreator) {
+        newProductLocationCreator.hidden = true;
+        newProductLocationName.value = "";
+        newProductLocationFreezer.checked = false;
+    }
 
     const stagedPurchase = row
         ? row.dataset.stagedPurchaseUnit
@@ -1118,15 +1174,6 @@ async function createNewProductInline(type, select, addButton) {
 
     const body = new URLSearchParams();
     body.set("name", trimmedName);
-
-    if (type === "location") {
-        const freezerCheckbox = document.getElementById(
-            "modal-new-product-location-freezer"
-        );
-        if (freezerCheckbox && freezerCheckbox.checked) {
-            body.set("is_freezer", "true");
-        }
-    }
 
     if (addButton) {
         addButton.disabled = true;
@@ -1216,16 +1263,117 @@ document.querySelectorAll(
     button.addEventListener("click", function (event) {
         const type = button.dataset.newProductAdd;
 
-        const select = type === "location"
-            ? document.getElementById(
-                "modal-new-product-location"
-            )
-            : button.parentElement.querySelector("select");
+        if (type === "location") {
+            const creator = document.getElementById(
+                "new-product-location-creator"
+            );
+            const nameInput = document.getElementById(
+                "modal-new-product-location-name"
+            );
+
+            if (creator) {
+                creator.hidden = false;
+                if (nameInput) {
+                    nameInput.value = "";
+                    nameInput.focus();
+                }
+            }
+            return;
+        }
+
+        const select = button.parentElement.querySelector("select");
 
         if (select) {
             createNewProductInline(type, select, button);
         }
     });
+});
+
+
+const newProductLocationCreator = document.getElementById(
+    "new-product-location-creator"
+);
+const newProductLocationName = document.getElementById(
+    "modal-new-product-location-name"
+);
+const newProductLocationFreezer = document.getElementById(
+    "modal-new-product-location-freezer"
+);
+const newProductLocationCreate = document.getElementById(
+    "modal-new-product-location-create"
+);
+const newProductLocationCancel = document.getElementById(
+    "modal-new-product-location-cancel"
+);
+
+newProductLocationCancel.addEventListener("click", function () {
+    newProductLocationCreator.hidden = true;
+    newProductLocationName.value = "";
+    newProductLocationFreezer.checked = false;
+});
+
+newProductLocationCreate.addEventListener("click", async function () {
+    const name = newProductLocationName.value.trim();
+
+    if (!name) {
+        setNewProductModalError(
+            "The storage location name cannot be empty."
+        );
+        newProductLocationName.focus();
+        return;
+    }
+
+    const basePath =
+        "{{ request.url.path.rsplit('/review', 1)[0] }}";
+    const body = new URLSearchParams();
+    body.set("name", name);
+
+    if (newProductLocationFreezer.checked) {
+        body.set("is_freezer", "true");
+    }
+
+    newProductLocationCreate.disabled = true;
+
+    try {
+        const response = await fetch(
+            basePath + "/new-product/location",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: body,
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            throw new Error(
+                data.error || "Unable to create storage location."
+            );
+        }
+
+        const locationSelect = document.getElementById(
+            "modal-new-product-location"
+        );
+        const option = new Option(
+            data.name,
+            String(data.id)
+        );
+
+        locationSelect.add(option);
+        locationSelect.value = String(data.id);
+
+        newProductLocationCreator.hidden = true;
+        newProductLocationName.value = "";
+        newProductLocationFreezer.checked = false;
+        setNewProductModalError("");
+    } catch (error) {
+        setNewProductModalError(error.message);
+    } finally {
+        newProductLocationCreate.disabled = false;
+    }
 });
 
 
