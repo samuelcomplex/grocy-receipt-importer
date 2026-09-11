@@ -435,43 +435,6 @@
                         title="Add storage location"
                     >+</button>
                 </div>
-                <div
-                    id="new-product-location-creator"
-                    class="new-product-modal-inline-creator"
-                    hidden
-                >
-                    <label for="modal-new-product-location-name">
-                        New storage location
-                    </label>
-                    <input
-                        type="text"
-                        id="modal-new-product-location-name"
-                        autocomplete="off"
-                    >
-                    <label class="new-product-modal-checkbox">
-                        <input
-                            type="checkbox"
-                            id="modal-new-product-location-freezer"
-                        >
-                        Is freezer
-                    </label>
-                    <div class="new-product-modal-inline-creator-actions">
-                        <button
-                            type="button"
-                            class="secondary-button"
-                            id="modal-new-product-location-cancel"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            class="primary-button"
-                            id="modal-new-product-location-create"
-                        >
-                            Create
-                        </button>
-                    </div>
-                </div>
             </div>
 
             <div class="new-product-modal-field">
@@ -526,6 +489,31 @@
                 </div>
             </div>
 
+            <div
+                id="modal-new-product-conversion"
+                class="new-product-modal-conversion"
+                hidden
+            >
+                <label for="modal-new-product-conversion-factor">
+                    Unit Conversion
+                </label>
+
+                <div class="conversion-expression">
+                    <span>1</span>
+                    <span id="modal-conversion-purchase-unit"></span>
+                    <span>=</span>
+                    <input
+                        type="number"
+                        id="modal-new-product-conversion-factor"
+                        name="conversion_factor"
+                        value="1"
+                        min="0.000001"
+                        step="any"
+                    >
+                    <span id="modal-conversion-stock-unit"></span>
+                </div>
+            </div>
+
             <div class="new-product-modal-field">
                 <label for="modal-new-product-best-before">
                     Default shelf life (days)
@@ -552,31 +540,6 @@
                     min="0"
                     step="1"
                 >
-            </div>
-
-            <div
-                id="modal-new-product-conversion"
-                class="new-product-modal-conversion"
-                hidden
-            >
-                <label for="modal-new-product-conversion-factor">
-                    {{ t("ui.conversion") }}
-                </label>
-
-                <div class="conversion-expression">
-                    <span>1</span>
-                    <span id="modal-conversion-purchase-unit"></span>
-                    <span>=</span>
-                    <input
-                        type="number"
-                        id="modal-new-product-conversion-factor"
-                        name="conversion_factor"
-                        value="1"
-                        min="0.000001"
-                        step="any"
-                    >
-                    <span id="modal-conversion-stock-unit"></span>
-                </div>
             </div>
 
             <details class="new-product-modal-advanced">
@@ -722,6 +685,14 @@
     box-shadow: 0 10px 40px var(--shadow);
 }
 
+.new-product-inline-modal-window {
+    width: min(400px, calc(100vw - 2rem));
+}
+
+#new-product-inline-modal {
+    z-index: 1100;
+}
+
 .new-product-modal-header {
     display: flex;
     align-items: center;
@@ -810,24 +781,6 @@
     gap: 0.5rem;
 }
 
-.new-product-modal-inline-creator {
-    display: grid;
-    gap: 0.35rem;
-    margin-top: 0.5rem;
-    padding: 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--input-background);
-}
-
-.new-product-modal-inline-creator-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
-}
-
-
 .new-product-modal-inline-field select {
     flex: 1;
     min-width: 0;
@@ -905,6 +858,67 @@
     color: var(--success);
 }
 </style>
+
+<div
+    id="new-product-inline-modal"
+    class="new-product-modal"
+    hidden
+>
+    <div
+        class="new-product-modal-window new-product-inline-modal-window"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-product-inline-modal-title"
+    >
+        <div class="new-product-modal-header">
+            <h2 id="new-product-inline-modal-title">
+                Create
+            </h2>
+            <button
+                type="button"
+                class="new-product-modal-close"
+                id="new-product-inline-modal-close"
+                aria-label="Close"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="new-product-modal-field">
+            <label for="new-product-inline-name">
+                Name
+            </label>
+            <input
+                type="text"
+                id="new-product-inline-name"
+                autocomplete="off"
+            >
+        </div>
+
+        <div
+            id="new-product-inline-modal-error"
+            class="new-product-modal-error"
+            hidden
+        ></div>
+
+        <div class="new-product-modal-actions">
+            <button
+                type="button"
+                class="secondary-button"
+                id="new-product-inline-modal-cancel"
+            >
+                Cancel
+            </button>
+            <button
+                type="button"
+                class="primary-button"
+                id="new-product-inline-modal-create"
+            >
+                Create
+            </button>
+        </div>
+    </div>
+</div>
 
 <script>
 const anotherFile = document.getElementById("another-file");
@@ -1088,12 +1102,6 @@ function openNewProductModal(index, productSelect) {
     stockUnit.value = purchaseUnit.value;
     productGroup.value = "";
 
-    if (newProductLocationCreator) {
-        newProductLocationCreator.hidden = true;
-        newProductLocationName.value = "";
-        newProductLocationFreezer.checked = false;
-    }
-
     const stagedPurchase = row
         ? row.dataset.stagedPurchaseUnit
         : "";
@@ -1141,25 +1149,124 @@ function openNewProductModal(index, productSelect) {
     document.getElementById("modal-new-product-name").focus();
 }
 
-async function createNewProductInline(type, select, addButton) {
+let inlineCreateType = null;
+let inlineCreateSelect = null;
+let inlineCreateAddButton = null;
+
+const newProductInlineModal = document.getElementById(
+    "new-product-inline-modal"
+);
+const newProductInlineModalTitle = document.getElementById(
+    "new-product-inline-modal-title"
+);
+const newProductInlineName = document.getElementById(
+    "new-product-inline-name"
+);
+let newProductInlineFreezerField = null;
+let newProductInlineFreezer = null;
+const newProductInlineModalError = document.getElementById(
+    "new-product-inline-modal-error"
+);
+const newProductInlineModalCreate = document.getElementById(
+    "new-product-inline-modal-create"
+);
+
+function setNewProductInlineModalError(message) {
+    newProductInlineModalError.textContent = message || "";
+    newProductInlineModalError.hidden = !message;
+}
+
+function closeNewProductInlineModal() {
+    newProductInlineModal.hidden = true;
+    newProductInlineName.value = "";
+
+    if (newProductInlineFreezerField) {
+        newProductInlineFreezerField.remove();
+        newProductInlineFreezerField = null;
+        newProductInlineFreezer = null;
+    }
+
+    setNewProductInlineModalError("");
+    inlineCreateType = null;
+    inlineCreateSelect = null;
+    inlineCreateAddButton = null;
+}
+
+function openNewProductInlineModal(type, select, addButton) {
+    inlineCreateType = type;
+    inlineCreateSelect = select;
+    inlineCreateAddButton = addButton;
+
     const label = type === "quantity-unit"
         ? "quantity unit"
         : type === "location"
             ? "storage location"
             : "product group";
 
-    const name = window.prompt("Enter new " + label + " name:");
+    newProductInlineModalTitle.textContent =
+        "Create " + label;
+    newProductInlineName.value = "";
+    if (newProductInlineFreezerField) {
+        newProductInlineFreezerField.remove();
+        newProductInlineFreezerField = null;
+        newProductInlineFreezer = null;
+    }
 
-    if (name === null) {
+    if (type === "location") {
+        newProductInlineFreezerField = document.createElement("label");
+        newProductInlineFreezerField.className =
+            "new-product-modal-checkbox";
+        newProductInlineFreezerField.innerHTML =
+            '<input type="checkbox" id="new-product-inline-freezer"> Is freezer';
+        newProductInlineFreezer = newProductInlineFreezerField.querySelector(
+            "input"
+        );
+        newProductInlineName.parentElement.after(
+            newProductInlineFreezerField
+        );
+    }
+
+    setNewProductInlineModalError("");
+    newProductInlineModal.hidden = false;
+    newProductInlineName.focus();
+}
+
+function closeNewProductModal(cancelled = true) {
+    if (cancelled && activeProductSelect) {
+        activeProductSelect.value = previousProductValue;
+        activeProductSelect.dataset.previousValue =
+            previousProductValue;
+        activeProductSelect.dispatchEvent(new Event("change"));
+    }
+
+    newProductModal.hidden = true;
+    setNewProductModalError("");
+    activeNewProductIndex = null;
+    activeProductSelect = null;
+}
+
+async function createNewProductInline() {
+    const type = inlineCreateType;
+    const select = inlineCreateSelect;
+    const addButton = inlineCreateAddButton;
+
+    if (!type || !select) {
         return;
     }
 
-    const trimmedName = name.trim();
+    const label = type === "quantity-unit"
+        ? "quantity unit"
+        : type === "location"
+            ? "storage location"
+            : "product group";
 
-    if (!trimmedName) {
-        setNewProductModalError(
+    const name = newProductInlineName.value.trim();
+
+    if (!name) {
+        setNewProductInlineModalError(
             "The " + label + " name cannot be empty."
         );
+        newProductInlineName.focus();
         return;
     }
 
@@ -1173,8 +1280,13 @@ async function createNewProductInline(type, select, addButton) {
             : basePath + "/new-product/product-group";
 
     const body = new URLSearchParams();
-    body.set("name", trimmedName);
+    body.set("name", name);
 
+    if (type === "location" && newProductInlineFreezer.checked) {
+        body.set("is_freezer", "true");
+    }
+
+    newProductInlineModalCreate.disabled = true;
     if (addButton) {
         addButton.disabled = true;
     }
@@ -1195,10 +1307,6 @@ async function createNewProductInline(type, select, addButton) {
                 data.error || "Unable to create " + label + "."
             );
         }
-
-        const option = new Option(data.name, String(data.id));
-        select.add(option);
-        select.value = String(data.id);
 
         if (type === "quantity-unit") {
             const purchaseUnit = document.getElementById(
@@ -1227,152 +1335,67 @@ async function createNewProductInline(type, select, addButton) {
                     );
                 }
             });
+        } else {
+            const alreadyExists = Array.from(
+                select.options
+            ).some(function (option) {
+                return option.value === String(data.id);
+            });
 
-            select.value = createdUnitId;
+            if (!alreadyExists) {
+                select.add(
+                    new Option(data.name, String(data.id))
+                );
+            }
+        }
+
+        select.value = String(data.id);
+
+        if (type === "quantity-unit") {
             updateNewProductConversion();
         }
 
-        setNewProductModalError("");
+        closeNewProductInlineModal();
     } catch (error) {
-        setNewProductModalError(error.message);
+        setNewProductInlineModalError(error.message);
     } finally {
+        newProductInlineModalCreate.disabled = false;
         if (addButton) {
             addButton.disabled = false;
         }
     }
 }
 
-
-function closeNewProductModal(cancelled = true) {
-    if (cancelled && activeProductSelect) {
-        activeProductSelect.value = previousProductValue;
-        activeProductSelect.dataset.previousValue =
-            previousProductValue;
-        activeProductSelect.dispatchEvent(new Event("change"));
-    }
-
-    newProductModal.hidden = true;
-    setNewProductModalError("");
-    activeNewProductIndex = null;
-    activeProductSelect = null;
-}
-
 document.querySelectorAll(
     ".new-product-modal-add-button"
 ).forEach(function (button) {
-    button.addEventListener("click", function (event) {
+    button.addEventListener("click", function () {
         const type = button.dataset.newProductAdd;
-
-        if (type === "location") {
-            const creator = document.getElementById(
-                "new-product-location-creator"
-            );
-            const nameInput = document.getElementById(
-                "modal-new-product-location-name"
-            );
-
-            if (creator) {
-                creator.hidden = false;
-                if (nameInput) {
-                    nameInput.value = "";
-                    nameInput.focus();
-                }
-            }
-            return;
-        }
-
         const select = button.parentElement.querySelector("select");
 
         if (select) {
-            createNewProductInline(type, select, button);
+            openNewProductInlineModal(type, select, button);
         }
     });
 });
 
+document.getElementById(
+    "new-product-inline-modal-close"
+).addEventListener("click", closeNewProductInlineModal);
 
-const newProductLocationCreator = document.getElementById(
-    "new-product-location-creator"
-);
-const newProductLocationName = document.getElementById(
-    "modal-new-product-location-name"
-);
-const newProductLocationFreezer = document.getElementById(
-    "modal-new-product-location-freezer"
-);
-const newProductLocationCreate = document.getElementById(
-    "modal-new-product-location-create"
-);
-const newProductLocationCancel = document.getElementById(
-    "modal-new-product-location-cancel"
+document.getElementById(
+    "new-product-inline-modal-cancel"
+).addEventListener("click", closeNewProductInlineModal);
+
+newProductInlineModalCreate.addEventListener(
+    "click",
+    createNewProductInline
 );
 
-newProductLocationCancel.addEventListener("click", function () {
-    newProductLocationCreator.hidden = true;
-    newProductLocationName.value = "";
-    newProductLocationFreezer.checked = false;
-});
-
-newProductLocationCreate.addEventListener("click", async function () {
-    const name = newProductLocationName.value.trim();
-
-    if (!name) {
-        setNewProductModalError(
-            "The storage location name cannot be empty."
-        );
-        newProductLocationName.focus();
-        return;
-    }
-
-    const basePath =
-        "{{ request.url.path.rsplit('/review', 1)[0] }}";
-    const body = new URLSearchParams();
-    body.set("name", name);
-
-    if (newProductLocationFreezer.checked) {
-        body.set("is_freezer", "true");
-    }
-
-    newProductLocationCreate.disabled = true;
-
-    try {
-        const response = await fetch(
-            basePath + "/new-product/location",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                body: body,
-            }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok || !data.ok) {
-            throw new Error(
-                data.error || "Unable to create storage location."
-            );
-        }
-
-        const locationSelect = document.getElementById(
-            "modal-new-product-location"
-        );
-        const option = new Option(
-            data.name,
-            String(data.id)
-        );
-
-        locationSelect.add(option);
-        locationSelect.value = String(data.id);
-
-        newProductLocationCreator.hidden = true;
-        newProductLocationName.value = "";
-        newProductLocationFreezer.checked = false;
-        setNewProductModalError("");
-    } catch (error) {
-        setNewProductModalError(error.message);
-    } finally {
-        newProductLocationCreate.disabled = false;
+newProductInlineName.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        createNewProductInline();
     }
 });
 
