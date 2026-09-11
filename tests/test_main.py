@@ -611,6 +611,31 @@ async def test_create_new_product_quantity_unit(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_create_new_product_group(monkeypatch):
+    created_calls = []
+
+    def fake_create(payload):
+        created_calls.append(payload)
+        return {"created_object_id": 31}
+
+    monkeypatch.setattr(main, "create_product_group", fake_create)
+
+    result = await main.create_new_product_group(
+        FakeFormRequest({"name": "Coffee"}),
+        "receipt-1",
+    )
+
+    result_data = json.loads(result.body)
+
+    assert result_data == {
+        "ok": True,
+        "id": 31,
+        "name": "Coffee",
+    }
+    assert created_calls == [{"name": "Coffee"}]
+
+
+@pytest.mark.anyio
 async def test_create_new_product_location(monkeypatch):
     created_calls = []
 
@@ -621,7 +646,10 @@ async def test_create_new_product_location(monkeypatch):
     monkeypatch.setattr(main, "create_location", fake_create)
 
     result = await main.create_new_product_location(
-        FakeFormRequest({"name": "Freezer"}),
+        FakeFormRequest({
+            "name": "Freezer",
+            "is_freezer": "true",
+        }),
         "receipt-1",
     )
 
@@ -632,7 +660,23 @@ async def test_create_new_product_location(monkeypatch):
         "id": 23,
         "name": "Freezer",
     }
-    assert created_calls == [{"name": "Freezer"}]
+    assert created_calls == [{
+        "name": "Freezer",
+        "is_freezer": True,
+    }]
+
+
+def test_new_product_group_route_binds_receipt_id():
+    route = next(
+        route
+        for route in main.app.routes
+        if route.path == "/receipt/{receipt_id}/new-product/product-group"
+    )
+
+    assert any(
+        parameter.name == "receipt_id"
+        for parameter in route.dependant.path_params
+    )
 
 
 def test_new_product_quantity_unit_route_binds_receipt_id():
@@ -659,6 +703,21 @@ def test_new_product_location_route_binds_receipt_id():
         parameter.name == "receipt_id"
         for parameter in route.dependant.path_params
     )
+
+
+@pytest.mark.anyio
+async def test_create_new_product_group_rejects_empty_name():
+    result = await main.create_new_product_group(
+        FakeFormRequest({"name": "   "}),
+        "receipt-1",
+    )
+
+    result_data = json.loads(result.body)
+
+    assert result_data == {
+        "ok": False,
+        "error": "Product group name is required.",
+    }
 
 
 @pytest.mark.anyio

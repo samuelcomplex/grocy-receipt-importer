@@ -21,6 +21,7 @@ from app.grocy import (
     load_quantity_units,
     create_quantity_unit,
     create_location,
+    create_product_group,
 )
 from app.product_matching import normalize_product_name, suggest_product_matches
 from app.product_service import (
@@ -644,6 +645,46 @@ async def create_new_product_quantity_unit(
         )
 
 
+@app.post("/receipt/{receipt_id}/new-product/product-group")
+async def create_new_product_group(
+    request: Request,
+    receipt_id: str,
+):
+    form = await request.form()
+    name = str(form.get("name") or "").strip()
+
+    if not name:
+        return json_response(
+            {
+                "ok": False,
+                "error": "Product group name is required.",
+            },
+            status_code=400,
+        )
+
+    try:
+        created = create_product_group({"name": name})
+        group_id = int(
+            created.get("id") or created.get("created_object_id")
+        )
+
+        return json_response(
+            {
+                "ok": True,
+                "id": group_id,
+                "name": name,
+            }
+        )
+    except Exception as exc:
+        return json_response(
+            {
+                "ok": False,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+
 @app.post("/receipt/{receipt_id}/new-product/location")
 async def create_new_product_location(
     request: Request,
@@ -651,6 +692,12 @@ async def create_new_product_location(
 ):
     form = await request.form()
     name = str(form.get("name") or "").strip()
+    is_freezer = str(form.get("is_freezer") or "").lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
 
     if not name:
         return json_response(
@@ -662,7 +709,10 @@ async def create_new_product_location(
         )
 
     try:
-        created = create_location({"name": name})
+        created = create_location({
+            "name": name,
+            "is_freezer": is_freezer,
+        })
         location_id = int(
             created.get("id") or created.get("created_object_id")
         )

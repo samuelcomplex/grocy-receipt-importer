@@ -94,6 +94,10 @@ def create_location(payload):
     return grocy_post("/api/objects/locations", payload)
 
 
+def create_product_group(payload):
+    return grocy_post("/api/objects/product_groups", payload)
+
+
 def create_quantity_unit_conversion(payload):
     return grocy_post("/api/objects/quantity_unit_conversions", payload)
 

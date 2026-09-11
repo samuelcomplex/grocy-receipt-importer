@@ -435,6 +435,15 @@
                         title="Add storage location"
                     >+</button>
                 </div>
+                <label class="new-product-modal-checkbox">
+                    <input
+                        type="checkbox"
+                        id="modal-new-product-location-freezer"
+                        name="is_freezer"
+                        value="true"
+                    >
+                    Is freezer
+                </label>
             </div>
 
             <div class="new-product-modal-field">
@@ -550,17 +559,26 @@
                         <label for="modal-new-product-group">
                             Product group
                         </label>
-                        <select
-                            id="modal-new-product-group"
-                            name="product_group_id"
-                        >
-                            <option value="">None</option>
-                            {% for group in product_groups|sort(attribute="name") %}
-                            <option value="{{ group.id }}">
-                                {{ group.name }}
-                            </option>
-                            {% endfor %}
-                        </select>
+                        <div class="new-product-modal-inline-field">
+                            <select
+                                id="modal-new-product-group"
+                                name="product_group_id"
+                            >
+                                <option value="">None</option>
+                                {% for group in product_groups|sort(attribute="name") %}
+                                <option value="{{ group.id }}">
+                                    {{ group.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button
+                                type="button"
+                                class="new-product-modal-add-button"
+                                data-new-product-add="product-group"
+                                aria-label="Add product group"
+                                title="Add product group"
+                            >+</button>
+                        </div>
                     </div>
 
                     <div class="new-product-modal-field">
@@ -1070,7 +1088,9 @@ function openNewProductModal(index, productSelect) {
 async function createNewProductInline(type, select, addButton) {
     const label = type === "quantity-unit"
         ? "quantity unit"
-        : "storage location";
+        : type === "location"
+            ? "storage location"
+            : "product group";
 
     const name = window.prompt("Enter new " + label + " name:");
 
@@ -1092,10 +1112,21 @@ async function createNewProductInline(type, select, addButton) {
 
     const endpoint = type === "quantity-unit"
         ? basePath + "/new-product/quantity-unit"
-        : basePath + "/new-product/location";
+        : type === "location"
+            ? basePath + "/new-product/location"
+            : basePath + "/new-product/product-group";
 
     const body = new URLSearchParams();
     body.set("name", trimmedName);
+
+    if (type === "location") {
+        const freezerCheckbox = document.getElementById(
+            "modal-new-product-location-freezer"
+        );
+        if (freezerCheckbox && freezerCheckbox.checked) {
+            body.set("is_freezer", "true");
+        }
+    }
 
     if (addButton) {
         addButton.disabled = true;
@@ -1123,6 +1154,34 @@ async function createNewProductInline(type, select, addButton) {
         select.value = String(data.id);
 
         if (type === "quantity-unit") {
+            const purchaseUnit = document.getElementById(
+                "modal-new-product-purchase-unit"
+            );
+            const stockUnit = document.getElementById(
+                "modal-new-product-stock-unit"
+            );
+            const createdUnitId = String(data.id);
+            const createdUnitName = data.name;
+
+            [purchaseUnit, stockUnit].forEach(function (unitSelect) {
+                if (!unitSelect) {
+                    return;
+                }
+
+                const alreadyExists = Array.from(
+                    unitSelect.options
+                ).some(function (option) {
+                    return option.value === createdUnitId;
+                });
+
+                if (!alreadyExists) {
+                    unitSelect.add(
+                        new Option(createdUnitName, createdUnitId)
+                    );
+                }
+            });
+
+            select.value = createdUnitId;
             updateNewProductConversion();
         }
 

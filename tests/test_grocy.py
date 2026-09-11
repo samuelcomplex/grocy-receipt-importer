@@ -153,6 +153,26 @@ def test_create_location_uses_locations_endpoint(monkeypatch):
     ]
 
 
+def test_create_product_group_uses_product_groups_endpoint(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        grocy,
+        "grocy_post",
+        lambda path, payload: calls.append((path, payload))
+        or {"created_object_id": 14},
+    )
+
+    payload = {"name": "Coffee"}
+
+    result = grocy.create_product_group(payload)
+
+    assert result == {"created_object_id": 14}
+    assert calls == [
+        ("/api/objects/product_groups", payload),
+    ]
+
+
 def test_grocy_delete_uses_delete_without_json_response(monkeypatch):
     calls = []
 
