@@ -32,7 +32,7 @@ from app.product_service import (
 )
 from app.receipt_model import receipt_from_parser_output, receipt_from_storage
 from app.storage import create_alias_storage, create_mapping_storage, create_receipt_storage
-from app.web import render_template
+from app.web import DEFAULT_LANGUAGE, TRANSLATIONS, render_template
 from common import money
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse

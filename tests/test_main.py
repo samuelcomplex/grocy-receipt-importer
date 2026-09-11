@@ -495,6 +495,24 @@ class FakeFormRequest:
         return self.values
 
 
+class FakeLanguageRequest(FakeFormRequest):
+    def __init__(self, values, referer="/"):
+        super().__init__(values)
+        self.headers = {"referer": referer}
+
+
+@pytest.mark.anyio
+async def test_set_language_redirects_and_sets_cookie():
+    result = await main.set_language(
+        FakeLanguageRequest({"language": "sv"}, "/receipt/test"),
+        "sv",
+    )
+
+    assert result.status_code == 303
+    assert result.headers["location"] == "/receipt/test"
+    assert "language=sv" in result.headers["set-cookie"]
+
+
 @pytest.mark.anyio
 async def test_stage_new_product_creates_product_immediately(monkeypatch):
     storage = FakeImportReceiptStorage(make_import_receipt())
