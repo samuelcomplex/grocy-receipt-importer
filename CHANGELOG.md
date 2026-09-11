@@ -9,6 +9,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Immediate creation of new Grocy products from the receipt review, with the created product made available to all receipt-line selectors.
+- Inline creation of quantity units, storage locations, and product groups while configuring a new product.
+- Inline storage-location creation with an option to mark newly-created locations as freezers; existing locations cannot be changed to freezers here.
 - Undo for newly-created Grocy products, including confirmation when a product is assigned to multiple receipt lines.
 - In-place removal of undone products and affected mappings without reloading the receipt review.
 - Parser-agnostic numeric normalization to canonical `Decimal` values for common European and US number formats.

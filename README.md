@@ -1,6 +1,6 @@
 # Grocy Receipt Importer
 
-**Version 0.3.3**
+**Version 0.3.4**
 
 A self-hosted web application that extracts receipt data from PDF files, lets you review and map products, and imports selected items into [Grocy](https://grocy.info/).
 
@@ -18,6 +18,9 @@ Retailer-specific receipt formats are implemented as plugins, making it possible
 - Saved article-number to Grocy-product mappings
 - Configure and stage new Grocy products directly from the receipt review
 - Select Grocy location, purchase unit, and stock unit when creating products
+- Create quantity units, storage locations, and product groups directly from the new-product modal
+- Mark newly-created storage locations as freezers
+- Undo newly-created products without reloading the receipt review
 - Product-specific purchase-to-stock quantity conversions
 - Quantity conversion to the selected Grocy product's stock unit
 - Receipt line prices calculated as price per imported stock unit
@@ -268,7 +271,7 @@ The project follows [Semantic Versioning](https://semver.org/):
 MAJOR.MINOR.PATCH
 ```
 
-The current release is **v0.3.2**.
+The current release is **v0.3.4**.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
@@ -284,6 +287,19 @@ Do not commit:
 - private database files
 
 If you discover a security issue, please report it privately rather than opening a public issue with sensitive details.
+
+## What's new in 0.3.4
+
+- New Grocy products can be created immediately from the receipt review without importing the receipt.
+- Newly-created products are added to all receipt-line product selectors and selected on the active line.
+- New-product configuration supports Grocy location, purchase unit, stock unit, product group, and purchase-to-stock conversion.
+- Quantity units and product groups can be created directly from the new-product modal.
+- Storage locations can be created directly from the new-product modal, including an option to mark the new location as a freezer.
+- Newly-created products can be undone directly from the receipt review without reloading the page.
+- Undo removes the product from all affected receipt-line selectors and clears its persisted assignments.
+- Multi-line product assignments require confirmation before the newly-created Grocy product is deleted.
+- Numeric values are normalized parser-independently into canonical `Decimal` values across common European and US number formats.
+- Expanded automated coverage for parser contracts, numeric normalization, product creation, undo behavior, multi-line assignments, and mapping actions.
 
 ## What's new in 0.3.2
 
