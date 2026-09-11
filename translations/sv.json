@@ -61,5 +61,14 @@
     "ui.delete_receipt": "Ta bort kvitto",
     "ui.delete_receipt_confirm": "Ta bort det här kvittot från importören? Artiklar som redan har importerats till Grocy tas inte bort.",
     "ui.delete_receipt_title": "Ta bort kvitto",
-    "ui.open_receipt": "Öppna kvitto"
+    "ui.open_receipt": "Öppna kvitto",
+    "ui.conversion": "Omvandling",
+    "ui.create_new_product": "Skapa ny produkt",
+    "ui.create_product_and_import": "Skapa produkt och importera",
+    "ui.import_unit": "Importenhet",
+    "ui.location": "Plats",
+    "ui.product_name": "Produktnamn",
+    "ui.purchase_unit": "Inköpsenhet",
+    "ui.same_as_purchase_unit": "Samma som inköpsenhet",
+    "ui.stock_unit": "Lagerenhet"
 }
