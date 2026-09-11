@@ -212,7 +212,7 @@
 >i</span>
 {% endif %}
 
-{% if item.new_product_status == "success" and item.match_type == "new" %}
+{% if item.match_type == "new" and item.grocy_product_id %}
 <div class="new-product-status new-product-status-success">
     New product created in Grocy.
 </div>
@@ -225,10 +225,6 @@
     Undo product creation
 </button>
 {% endif %}
-{% elif item.new_product_status == "error" %}
-<div class="new-product-status new-product-status-failed">
-    New product creation failed: {{ item.new_product_error }}
-</div>
 {% elif item.create_product_status == "failed" %}
 <div class="new-product-status new-product-status-failed">
     Creation/import failed: {{ item.create_product_error }}
@@ -399,54 +395,126 @@
             </div>
 
             <div class="new-product-modal-field">
-                <label for="modal-new-product-location">
-                    {{ t("ui.location") }}
+                <label for="modal-new-product-parent">
+                    Parent product
                 </label>
                 <select
-                    id="modal-new-product-location"
-                    name="location_id"
-                    required
+                    id="modal-new-product-parent"
+                    name="parent_product_id"
                 >
-                    {% for location in locations|sort(attribute="name") %}
-                    <option value="{{ location.id }}">
-                        {{ location.name }}
+                    <option value="">None</option>
+                    {% for product in products|sort(attribute="name") %}
+                    <option value="{{ product.id }}">
+                        {{ product.name }}
                     </option>
                     {% endfor %}
                 </select>
+            </div>
+
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-location">
+                    {{ t("ui.location") }}
+                </label>
+                <div class="new-product-modal-inline-field">
+                    <select
+                        id="modal-new-product-location"
+                        name="location_id"
+                        required
+                    >
+                        {% for location in locations|sort(attribute="name") %}
+                        <option value="{{ location.id }}">
+                            {{ location.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button
+                        type="button"
+                        class="new-product-modal-add-button"
+                        data-new-product-add="location"
+                        aria-label="Add storage location"
+                        title="Add storage location"
+                    >+</button>
+                </div>
             </div>
 
             <div class="new-product-modal-field">
                 <label for="modal-new-product-purchase-unit">
                     {{ t("ui.purchase_unit") }}
                 </label>
-                <select
-                    id="modal-new-product-purchase-unit"
-                    name="purchase_unit_id"
-                    required
-                >
-                    {% for unit in quantity_units|sort(attribute="name") %}
-                    <option value="{{ unit.id }}">
-                        {{ unit.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="new-product-modal-inline-field">
+                    <select
+                        id="modal-new-product-purchase-unit"
+                        name="purchase_unit_id"
+                        required
+                    >
+                        {% for unit in quantity_units|sort(attribute="name") %}
+                        <option value="{{ unit.id }}">
+                            {{ unit.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button
+                        type="button"
+                        class="new-product-modal-add-button"
+                        data-new-product-add="quantity-unit"
+                        aria-label="Add quantity unit"
+                        title="Add quantity unit"
+                    >+</button>
+                </div>
             </div>
 
             <div class="new-product-modal-field">
                 <label for="modal-new-product-stock-unit">
                     {{ t("ui.stock_unit") }}
                 </label>
-                <select
-                    id="modal-new-product-stock-unit"
-                    name="stock_unit_id"
-                    required
+                <div class="new-product-modal-inline-field">
+                    <select
+                        id="modal-new-product-stock-unit"
+                        name="stock_unit_id"
+                        required
+                    >
+                        {% for unit in quantity_units|sort(attribute="name") %}
+                        <option value="{{ unit.id }}">
+                            {{ unit.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button
+                        type="button"
+                        class="new-product-modal-add-button"
+                        data-new-product-add="quantity-unit"
+                        aria-label="Add quantity unit"
+                        title="Add quantity unit"
+                    >+</button>
+                </div>
+            </div>
+
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-best-before">
+                    Default shelf life (days)
+                </label>
+                <input
+                    type="number"
+                    id="modal-new-product-best-before"
+                    name="default_best_before_days"
+                    value="0"
+                    min="0"
+                    step="1"
                 >
-                    {% for unit in quantity_units|sort(attribute="name") %}
-                    <option value="{{ unit.id }}">
-                        {{ unit.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+            </div>
+
+            <div class="new-product-modal-field">
+                <label for="modal-new-product-best-before-open">
+                    Shelf life after opening (days)
+                </label>
+                <input
+                    type="number"
+                    id="modal-new-product-best-before-open"
+                    name="default_best_before_days_after_open"
+                    value="0"
+                    min="0"
+                    step="1"
+                >
             </div>
 
             <div
@@ -473,6 +541,84 @@
                     <span id="modal-conversion-stock-unit"></span>
                 </div>
             </div>
+
+            <details class="new-product-modal-advanced">
+                <summary>Advanced options</summary>
+
+                <div class="new-product-modal-advanced-content">
+                    <div class="new-product-modal-field">
+                        <label for="modal-new-product-group">
+                            Product group
+                        </label>
+                        <select
+                            id="modal-new-product-group"
+                            name="product_group_id"
+                        >
+                            <option value="">None</option>
+                            {% for group in product_groups|sort(attribute="name") %}
+                            <option value="{{ group.id }}">
+                                {{ group.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="new-product-modal-field">
+                        <label for="modal-new-product-shopping-location">
+                            Shopping location
+                        </label>
+                        <select
+                            id="modal-new-product-shopping-location"
+                            name="shopping_location_id"
+                        >
+                            <option value="">None</option>
+                            {% for location in shopping_locations|sort(attribute="name") %}
+                            <option value="{{ location.id }}">
+                                {{ location.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="new-product-modal-field">
+                        <label for="modal-new-product-min-stock">
+                            Minimum stock amount
+                        </label>
+                        <input
+                            type="number"
+                            id="modal-new-product-min-stock"
+                            name="min_stock_amount"
+                            value="0"
+                            min="0"
+                            step="any"
+                        >
+                    </div>
+
+                    <div class="new-product-modal-field">
+                        <label for="modal-new-product-quick-consume">
+                            Quick consume amount
+                        </label>
+                        <input
+                            type="number"
+                            id="modal-new-product-quick-consume"
+                            name="quick_consume_amount"
+                            value="0"
+                            min="0"
+                            step="any"
+                        >
+                    </div>
+
+                    <label class="new-product-modal-checkbox">
+                        <input
+                            type="checkbox"
+                            id="modal-new-product-opened-out-of-stock"
+                            name="treat_opened_as_out_of_stock"
+                            value="true"
+                        >
+                        <span>Treat opened as out of stock</span>
+                    </label>
+                </div>
+            </details>
 
             <div
                 id="new-product-modal-error"
@@ -584,6 +730,63 @@
     width: 8rem;
     max-width: 100%;
     box-sizing: border-box;
+}
+
+.new-product-modal-advanced {
+    margin-bottom: 1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.75rem;
+}
+
+.new-product-modal-advanced summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.new-product-modal-advanced-content {
+    padding-top: 1rem;
+}
+
+.new-product-modal-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.new-product-modal-checkbox input {
+    width: auto;
+}
+
+.new-product-modal-inline-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.new-product-modal-inline-field select {
+    flex: 1;
+    min-width: 0;
+}
+
+.new-product-modal-add-button {
+    flex: 0 0 auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--button-background);
+    color: var(--text);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.new-product-modal-add-button:hover,
+.new-product-modal-add-button:focus-visible {
+    border-color: var(--parser-accent, var(--border));
+    color: var(--parser-accent, var(--text));
 }
 
 .new-product-modal-error {
@@ -864,6 +1067,76 @@ function openNewProductModal(index, productSelect) {
     document.getElementById("modal-new-product-name").focus();
 }
 
+async function createNewProductInline(type, select, addButton) {
+    const label = type === "quantity-unit"
+        ? "quantity unit"
+        : "storage location";
+
+    const name = window.prompt("Enter new " + label + " name:");
+
+    if (name === null) {
+        return;
+    }
+
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+        setNewProductModalError(
+            "The " + label + " name cannot be empty."
+        );
+        return;
+    }
+
+    const basePath =
+        "{{ request.url.path.rsplit('/review', 1)[0] }}";
+
+    const endpoint = type === "quantity-unit"
+        ? basePath + "/new-product/quantity-unit"
+        : basePath + "/new-product/location";
+
+    const body = new URLSearchParams();
+    body.set("name", trimmedName);
+
+    if (addButton) {
+        addButton.disabled = true;
+    }
+
+    try {
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: body,
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            throw new Error(
+                data.error || "Unable to create " + label + "."
+            );
+        }
+
+        const option = new Option(data.name, String(data.id));
+        select.add(option);
+        select.value = String(data.id);
+
+        if (type === "quantity-unit") {
+            updateNewProductConversion();
+        }
+
+        setNewProductModalError("");
+    } catch (error) {
+        setNewProductModalError(error.message);
+    } finally {
+        if (addButton) {
+            addButton.disabled = false;
+        }
+    }
+}
+
+
 function closeNewProductModal(cancelled = true) {
     if (cancelled && activeProductSelect) {
         activeProductSelect.value = previousProductValue;
@@ -877,6 +1150,25 @@ function closeNewProductModal(cancelled = true) {
     activeNewProductIndex = null;
     activeProductSelect = null;
 }
+
+document.querySelectorAll(
+    ".new-product-modal-add-button"
+).forEach(function (button) {
+    button.addEventListener("click", function (event) {
+        const type = button.dataset.newProductAdd;
+
+        const select = type === "location"
+            ? document.getElementById(
+                "modal-new-product-location"
+            )
+            : button.parentElement.querySelector("select");
+
+        if (select) {
+            createNewProductInline(type, select, button);
+        }
+    });
+});
+
 
 document.querySelectorAll(
     ".configure-new-product-button"

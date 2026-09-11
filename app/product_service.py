@@ -18,6 +18,16 @@ def validate_new_product_configuration(
     products,
     locations,
     quantity_units,
+    product_groups=None,
+    shopping_locations=None,
+    parent_product_id=None,
+    product_group_id=None,
+    shopping_location_id=None,
+    min_stock_amount=0,
+    quick_consume_amount=0,
+    treat_opened_as_out_of_stock=False,
+    default_best_before_days=0,
+    default_best_before_days_after_open=0,
 ):
     # Use the same payload validation that actual creation uses.
     product_payload = build_new_product_payload(
@@ -26,6 +36,14 @@ def validate_new_product_configuration(
         purchase_unit_id=purchase_unit_id,
         stock_unit_id=stock_unit_id,
         conversion_factor=conversion_factor,
+        parent_product_id=parent_product_id,
+        product_group_id=product_group_id,
+        shopping_location_id=shopping_location_id,
+        min_stock_amount=min_stock_amount,
+        quick_consume_amount=quick_consume_amount,
+        treat_opened_as_out_of_stock=treat_opened_as_out_of_stock,
+        default_best_before_days=default_best_before_days,
+        default_best_before_days_after_open=default_best_before_days_after_open,
     )
 
     location_ids = {
@@ -53,6 +71,38 @@ def validate_new_product_configuration(
             "Selected stock unit no longer exists in Grocy."
         )
 
+    if parent_product_id:
+        product_ids = {
+            str(product.get("id"))
+            for product in products
+        }
+        if str(parent_product_id) not in product_ids:
+            raise ValueError(
+                "Selected parent product no longer exists in Grocy."
+            )
+
+    if product_group_id:
+        product_groups = product_groups or []
+        product_group_ids = {
+            str(group.get("id"))
+            for group in product_groups
+        }
+        if str(product_group_id) not in product_group_ids:
+            raise ValueError(
+                "Selected product group no longer exists in Grocy."
+            )
+
+    if shopping_location_id:
+        shopping_locations = shopping_locations or []
+        shopping_location_ids = {
+            str(location.get("id"))
+            for location in shopping_locations
+        }
+        if str(shopping_location_id) not in shopping_location_ids:
+            raise ValueError(
+                "Selected shopping location no longer exists in Grocy."
+            )
+
     normalized_name = normalize_product_name(name)
 
     if not normalized_name:
@@ -74,6 +124,14 @@ def build_new_product_payload(
     purchase_unit_id,
     stock_unit_id,
     conversion_factor,
+    parent_product_id=None,
+    product_group_id=None,
+    shopping_location_id=None,
+    min_stock_amount=0,
+    quick_consume_amount=0,
+    treat_opened_as_out_of_stock=False,
+    default_best_before_days=0,
+    default_best_before_days_after_open=0,
 ):
     if not name or not name.strip():
         raise ValueError("Product name is required.")
@@ -95,15 +153,60 @@ def build_new_product_payload(
     if conversion <= 0:
         raise ValueError("Conversion factor must be greater than zero.")
 
-    return {
+    try:
+        min_stock = Decimal(str(min_stock_amount))
+        quick_consume = Decimal(str(quick_consume_amount))
+        best_before_days = int(default_best_before_days)
+        best_before_days_after_open = int(
+            default_best_before_days_after_open
+        )
+    except (ValueError, TypeError, ArithmeticError) as exc:
+        raise ValueError(
+            "Numeric product settings are invalid."
+        ) from exc
+
+    if min_stock < 0:
+        raise ValueError("Minimum stock amount cannot be negative.")
+
+    if quick_consume < 0:
+        raise ValueError("Quick consume amount cannot be negative.")
+
+    if best_before_days < 0:
+        raise ValueError("Default shelf life cannot be negative.")
+
+    if best_before_days_after_open < 0:
+        raise ValueError(
+            "Shelf life after opening cannot be negative."
+        )
+
+    payload = {
         "name": name.strip(),
         "location_id": int(location_id),
         "qu_id_purchase": int(purchase_unit_id),
         "qu_id_stock": int(stock_unit_id),
         "qu_id_consume": int(stock_unit_id),
         "qu_id_price": int(purchase_unit_id),
-        "min_stock_amount": 0,
+        "min_stock_amount": float(min_stock),
+        "quick_consume_amount": float(quick_consume),
+        "treat_opened_as_out_of_stock": bool(
+            treat_opened_as_out_of_stock
+        ),
+        "default_best_before_days": best_before_days,
+        "default_best_before_days_after_open": (
+            best_before_days_after_open
+        ),
     }
+
+    if parent_product_id:
+        payload["parent_product_id"] = int(parent_product_id)
+
+    if product_group_id:
+        payload["product_group_id"] = int(product_group_id)
+
+    if shopping_location_id:
+        payload["shopping_location_id"] = int(shopping_location_id)
+
+    return payload
 
 
 def calculate_price_per_stock_unit(net_price, stock_amount):

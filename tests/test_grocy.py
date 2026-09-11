@@ -31,6 +31,40 @@ def test_load_quantity_units_uses_quantity_units_endpoint(monkeypatch):
     assert calls == ["/api/objects/quantity_units"]
 
 
+def test_load_product_groups_uses_product_groups_endpoint(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        grocy,
+        "grocy_get",
+        lambda path: calls.append(path) or [
+            {"id": 7, "name": "Coffee"},
+        ],
+    )
+
+    result = grocy.load_product_groups()
+
+    assert result == [{"id": 7, "name": "Coffee"}]
+    assert calls == ["/api/objects/product_groups"]
+
+
+def test_load_shopping_locations_uses_shopping_locations_endpoint(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        grocy,
+        "grocy_get",
+        lambda path: calls.append(path) or [
+            {"id": 9, "name": "Supermarket"},
+        ],
+    )
+
+    result = grocy.load_shopping_locations()
+
+    assert result == [{"id": 9, "name": "Supermarket"}]
+    assert calls == ["/api/objects/shopping_locations"]
+
+
 def test_load_quantity_unit_conversions_uses_conversions_endpoint(monkeypatch):
     calls = []
 
@@ -76,6 +110,46 @@ def test_create_product_uses_products_endpoint(monkeypatch):
     assert result == {"created_object_id": 42}
     assert calls == [
         ("/api/objects/products", payload),
+    ]
+
+
+def test_create_quantity_unit_uses_quantity_units_endpoint(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        grocy,
+        "grocy_post",
+        lambda path, payload: calls.append((path, payload))
+        or {"created_object_id": 11},
+    )
+
+    payload = {"name": "kg"}
+
+    result = grocy.create_quantity_unit(payload)
+
+    assert result == {"created_object_id": 11}
+    assert calls == [
+        ("/api/objects/quantity_units", payload),
+    ]
+
+
+def test_create_location_uses_locations_endpoint(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        grocy,
+        "grocy_post",
+        lambda path, payload: calls.append((path, payload))
+        or {"created_object_id": 12},
+    )
+
+    payload = {"name": "Freezer"}
+
+    result = grocy.create_location(payload)
+
+    assert result == {"created_object_id": 12}
+    assert calls == [
+        ("/api/objects/locations", payload),
     ]
 
 

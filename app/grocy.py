@@ -70,12 +70,28 @@ def load_quantity_units():
     return grocy_get("/api/objects/quantity_units")
 
 
+def load_product_groups():
+    return grocy_get("/api/objects/product_groups")
+
+
+def load_shopping_locations():
+    return grocy_get("/api/objects/shopping_locations")
+
+
 def load_quantity_unit_conversions():
     return grocy_get("/api/objects/quantity_unit_conversions")
 
 
 def create_product(payload):
     return grocy_post("/api/objects/products", payload)
+
+
+def create_quantity_unit(payload):
+    return grocy_post("/api/objects/quantity_units", payload)
+
+
+def create_location(payload):
+    return grocy_post("/api/objects/locations", payload)
 
 
 def create_quantity_unit_conversion(payload):

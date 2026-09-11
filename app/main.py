@@ -14,9 +14,13 @@ from app.grocy import (
     load_locations,
     load_product,
     load_products,
+    load_product_groups,
+    load_shopping_locations,
     grocy_delete,
     load_quantity_unit_conversions,
     load_quantity_units,
+    create_quantity_unit,
+    create_location,
 )
 from app.product_matching import normalize_product_name, suggest_product_matches
 from app.product_service import (
@@ -64,9 +68,6 @@ def initialize_item_state(items):
         item.setdefault("grocy_product_name", "")
         item.setdefault("status", "Pending")
         item.setdefault("match_type", None)
-        item.setdefault("new_product_config", None)
-        item.setdefault("new_product_status", None)
-        item.setdefault("new_product_error", "")
 
 
 
@@ -265,9 +266,6 @@ async def undo_new_product(
             affected_item["grocy_product_id"] = None
             affected_item["grocy_product_name"] = ""
             affected_item["match_type"] = None
-            affected_item["new_product_config"] = None
-            affected_item["new_product_status"] = None
-            affected_item["new_product_error"] = ""
 
         receipt_storage.update(
             receipt_id,
@@ -283,8 +281,6 @@ async def undo_new_product(
         )
 
     except Exception as exc:
-        item["new_product_error"] = str(exc)
-
         receipt_storage.update(
             receipt_id,
             items_json=json.dumps(items, ensure_ascii=False),
@@ -570,12 +566,16 @@ def review(
         products = load_products()
         locations = load_locations()
         quantity_units = load_quantity_units()
+        product_groups = load_product_groups()
+        shopping_locations = load_shopping_locations()
         suggest_product_matches(items, products)
         grocy_error = None
     except Exception as exc:
         products = []
         locations = []
         quantity_units = []
+        product_groups = []
+        shopping_locations = []
         grocy_error = str(exc)
 
     receipt_storage.update(
@@ -594,6 +594,8 @@ def review(
             "products": products,
             "locations": locations,
             "quantity_units": quantity_units,
+            "product_groups": product_groups,
+            "shopping_locations": shopping_locations,
             "parser_name": parser_name,
             "parser_theme": parser_theme,
             "grocy_error": grocy_error,
@@ -602,6 +604,84 @@ def review(
 
 
 
+
+
+@app.post("/receipt/{receipt_id}/new-product/quantity-unit")
+async def create_new_product_quantity_unit(
+    request: Request,
+    receipt_id: str,
+):
+    form = await request.form()
+    name = str(form.get("name") or "").strip()
+
+    if not name:
+        return json_response(
+            {
+                "ok": False,
+                "error": "Quantity unit name is required.",
+            },
+            status_code=400,
+        )
+
+    try:
+        created = create_quantity_unit({"name": name})
+        unit_id = int(created.get("id") or created.get("created_object_id"))
+
+        return json_response(
+            {
+                "ok": True,
+                "id": unit_id,
+                "name": name,
+            }
+        )
+    except Exception as exc:
+        return json_response(
+            {
+                "ok": False,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+
+@app.post("/receipt/{receipt_id}/new-product/location")
+async def create_new_product_location(
+    request: Request,
+    receipt_id: str,
+):
+    form = await request.form()
+    name = str(form.get("name") or "").strip()
+
+    if not name:
+        return json_response(
+            {
+                "ok": False,
+                "error": "Storage location name is required.",
+            },
+            status_code=400,
+        )
+
+    try:
+        created = create_location({"name": name})
+        location_id = int(
+            created.get("id") or created.get("created_object_id")
+        )
+
+        return json_response(
+            {
+                "ok": True,
+                "id": location_id,
+                "name": name,
+            }
+        )
+    except Exception as exc:
+        return json_response(
+            {
+                "ok": False,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
 
 
 @app.post("/receipt/{receipt_id}/stage-new-product")
@@ -661,6 +741,20 @@ async def stage_new_product(
     purchase_unit_id = form.get("purchase_unit_id")
     stock_unit_id = form.get("stock_unit_id")
     conversion_factor = form.get("conversion_factor") or "1"
+    parent_product_id = form.get("parent_product_id") or None
+    product_group_id = form.get("product_group_id") or None
+    shopping_location_id = form.get("shopping_location_id") or None
+    min_stock_amount = form.get("min_stock_amount") or "0"
+    quick_consume_amount = form.get("quick_consume_amount") or "0"
+    treat_opened_as_out_of_stock = (
+        form.get("treat_opened_as_out_of_stock") == "true"
+    )
+    default_best_before_days = (
+        form.get("default_best_before_days") or "0"
+    )
+    default_best_before_days_after_open = (
+        form.get("default_best_before_days_after_open") or "0"
+    )
 
     try:
         # These are deliberately loaded live. The modal must not rely
@@ -668,6 +762,8 @@ async def stage_new_product(
         products = load_products()
         locations = load_locations()
         quantity_units = load_quantity_units()
+        product_groups = load_product_groups()
+        shopping_locations = load_shopping_locations()
 
         product_payload = validate_new_product_configuration(
             name=name,
@@ -678,6 +774,18 @@ async def stage_new_product(
             products=products,
             locations=locations,
             quantity_units=quantity_units,
+            product_groups=product_groups,
+            shopping_locations=shopping_locations,
+            parent_product_id=parent_product_id,
+            product_group_id=product_group_id,
+            shopping_location_id=shopping_location_id,
+            min_stock_amount=min_stock_amount,
+            quick_consume_amount=quick_consume_amount,
+            treat_opened_as_out_of_stock=treat_opened_as_out_of_stock,
+            default_best_before_days=default_best_before_days,
+            default_best_before_days_after_open=(
+                default_best_before_days_after_open
+            ),
         )
 
         location_names = {
@@ -701,9 +809,6 @@ async def stage_new_product(
         item["grocy_product_id"] = product_id
         item["grocy_product_name"] = product_payload["name"]
         item["match_type"] = "new"
-        item["new_product_config"] = None
-        item["new_product_status"] = "success"
-        item["new_product_error"] = ""
 
         receipt_storage.update(
             receipt_id,
@@ -726,9 +831,6 @@ async def stage_new_product(
         )
 
     except Exception as exc:
-        item["new_product_status"] = "error"
-        item["new_product_error"] = str(exc)
-
         receipt_storage.update(
             receipt_id,
             items_json=json.dumps(
@@ -846,146 +948,93 @@ async def import_receipt(
             conversion_factor = None
 
             if selected_product_id == "new":
-                config = item.get("new_product_config")
+                existing_product_id = item.get("grocy_product_id")
 
-                if not config:
+                if existing_product_id is None:
                     raise ValueError(
-                        "New product has not been configured. "
+                        "New product has not been created. "
                         "Use 'Configure new product' first."
                     )
 
-                # Re-check live Grocy data immediately before creation.
-                current_products = load_products()
-                current_locations = load_locations()
-                current_quantity_units = load_quantity_units()
+                selected_product_id = str(existing_product_id)
 
-                product_payload = validate_new_product_configuration(
-                    name=config.get("name"),
-                    location_id=config.get("location_id"),
-                    purchase_unit_id=config.get("purchase_unit_id"),
-                    stock_unit_id=config.get("stock_unit_id"),
-                    conversion_factor=config.get(
-                        "conversion_factor"
-                    ),
-                    products=current_products,
-                    locations=current_locations,
-                    quantity_units=current_quantity_units,
+            product_name = product_names.get(selected_product_id)
+
+            if not product_name:
+                existing_product_id = item.get("grocy_product_id")
+                existing_product_name = item.get("grocy_product_name")
+
+                if (
+                    existing_product_id is not None
+                    and str(existing_product_id) == selected_product_id
+                    and existing_product_name
+                ):
+                    product_name = existing_product_name
+
+            if not product_name:
+                raise ValueError(
+                    "Selected Grocy product could not be resolved."
                 )
 
-                created = create_new_grocy_product(
-                    product_payload=product_payload,
-                    purchase_unit_id=config.get(
-                        "purchase_unit_id"
-                    ),
-                    stock_unit_id=config.get(
-                        "stock_unit_id"
-                    ),
-                    conversion_factor=config.get(
-                        "conversion_factor"
-                    ),
+            product = next(
+                (
+                    product
+                    for product in products
+                    if str(product.get("id")) == selected_product_id
+                ),
+                None,
+            )
+
+            if not product:
+                existing_product_id = item.get("grocy_product_id")
+
+                if (
+                    existing_product_id is not None
+                    and str(existing_product_id) == selected_product_id
+                ):
+                    product = {
+                        "id": int(selected_product_id),
+                        "name": product_name,
+                    }
+
+            if not product:
+                raise ValueError(
+                    "Selected Grocy product could not be loaded."
                 )
 
-                selected_product_id = str(
-                    created["product_id"]
-                )
-                product_name = product_payload["name"]
+            purchase_unit_id = product.get("qu_id_purchase")
+            stock_unit_id = product.get("qu_id_stock")
 
-                # Keep the in-memory product list consistent for the
-                # rendered response after creating a new product.
-                products.append({
-                    "id": int(selected_product_id),
-                    "name": product_name,
-                    **product_payload,
-                })
-
-                purchase_unit_id = config.get(
-                    "purchase_unit_id"
-                )
-                stock_unit_id = config.get(
-                    "stock_unit_id"
-                )
-                conversion_factor = config.get(
-                    "conversion_factor"
-                )
-
-            else:
-                product_name = product_names.get(selected_product_id)
-
-                if not product_name:
-                    existing_product_id = item.get("grocy_product_id")
-                    existing_product_name = item.get("grocy_product_name")
-
-                    if (
-                        existing_product_id is not None
-                        and str(existing_product_id) == selected_product_id
-                        and existing_product_name
-                    ):
-                        product_name = existing_product_name
-
-                if not product_name:
-                    raise ValueError(
-                        "Selected Grocy product could not be resolved."
-                    )
-
-                product = next(
-                    (
-                        product
-                        for product in products
-                        if str(product.get("id")) == selected_product_id
-                    ),
-                    None,
-                )
-
-                if not product:
-                    existing_product_id = item.get("grocy_product_id")
-
-                    if (
-                        existing_product_id is not None
-                        and str(existing_product_id) == selected_product_id
-                    ):
-                        product = {
-                            "id": int(selected_product_id),
-                            "name": product_name,
-                        }
-
-                if not product:
-                    raise ValueError(
-                        "Selected Grocy product could not be loaded."
-                    )
+            if not purchase_unit_id or not stock_unit_id:
+                product = load_product(selected_product_id)
 
                 purchase_unit_id = product.get("qu_id_purchase")
                 stock_unit_id = product.get("qu_id_stock")
 
-                if not purchase_unit_id or not stock_unit_id:
-                    product = load_product(selected_product_id)
+            if not purchase_unit_id:
+                raise ValueError(
+                    "Selected Grocy product has no purchase quantity unit."
+                )
 
-                    purchase_unit_id = product.get("qu_id_purchase")
-                    stock_unit_id = product.get("qu_id_stock")
+            if not stock_unit_id:
+                raise ValueError(
+                    "Selected Grocy product has no stock quantity unit."
+                )
 
-                if not purchase_unit_id:
+            import_unit_id = form.get(f"import_unit_{index}")
+
+            if import_unit_id:
+                import_unit_id = int(import_unit_id)
+
+                if import_unit_id == int(stock_unit_id):
+                    conversion_factor = "1"
+                    purchase_unit_id = stock_unit_id
+                elif import_unit_id == int(purchase_unit_id):
+                    conversion_factor = None
+                else:
                     raise ValueError(
-                        "Selected Grocy product has no purchase quantity unit."
+                        "Selected import unit is not configured for this Grocy product."
                     )
-
-                if not stock_unit_id:
-                    raise ValueError(
-                        "Selected Grocy product has no stock quantity unit."
-                    )
-
-                import_unit_id = form.get(f"import_unit_{index}")
-
-                if import_unit_id:
-                    import_unit_id = int(import_unit_id)
-
-                    if import_unit_id == int(stock_unit_id):
-                        conversion_factor = "1"
-                        purchase_unit_id = stock_unit_id
-                    elif import_unit_id == int(purchase_unit_id):
-                        conversion_factor = None
-                    else:
-                        raise ValueError(
-                            "Selected import unit is not configured for this Grocy product."
-                        )
 
             amount = calculate_stock_amount(
                 purchase_amount=item["quantity"],
@@ -1063,38 +1112,14 @@ async def import_receipt(
             item["status"] = "Imported"
             item["grocy_product_id"] = int(selected_product_id)
             item["grocy_product_name"] = product_name
-
-            if item.get("new_product_config"):
-                item["create_product_status"] = "success"
-                item["create_product_error"] = ""
-                item["new_product_status"] = "success"
             item["transaction_id"] = str(transaction_id)
             item.pop("error", None)
-
-            if item.get("new_product_status") == "success":
-                item.pop("new_product_config", None)
-                item.pop("new_product_status", None)
-                item.pop("new_product_error", None)
 
             imported += 1
 
         except Exception as exc:
             item["status"] = "Failed"
             item["error"] = str(exc)
-            if (
-                item.get("new_product_config")
-                and isinstance(exc, ValueError)
-                and (
-                    "required" in str(exc).lower()
-                    or "not been configured" in str(exc).lower()
-                    or "conversion factor" in str(exc).lower()
-                )
-            ):
-                item["create_product_status"] = "missing"
-            else:
-                item["create_product_status"] = "failed"
-
-            item["create_product_error"] = str(exc)
             failed += 1
 
     receipt_storage.update(
