@@ -79,6 +79,42 @@ def test_create_product_uses_products_endpoint(monkeypatch):
     ]
 
 
+def test_grocy_delete_uses_delete_without_json_response(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        status_code = 204
+        reason = "No Content"
+        text = ""
+
+        def json(self):
+            raise AssertionError("DELETE must not attempt to decode JSON")
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return FakeResponse()
+
+    monkeypatch.setattr(grocy.requests, "request", fake_request)
+
+    grocy.grocy_delete("/api/objects/products/99")
+
+    assert calls == [
+        (
+            "DELETE",
+            grocy.GROCY_BASE_URL + "/api/objects/products/99",
+            {
+                "headers": {
+                    "GROCY-API-KEY": grocy.GROCY_API_KEY,
+                    "Accept": "application/json",
+                },
+                "json": None,
+                "timeout": 20,
+            },
+        )
+    ]
+
+
 def test_create_quantity_unit_conversion(monkeypatch):
     import app.grocy as grocy
 

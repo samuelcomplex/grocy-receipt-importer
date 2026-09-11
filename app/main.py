@@ -14,6 +14,7 @@ from app.grocy import (
     load_locations,
     load_product,
     load_products,
+    grocy_delete,
     load_quantity_unit_conversions,
     load_quantity_units,
 )
@@ -172,6 +173,132 @@ async def set_language(request: Request, language: str = Form(...)):
     return response
 
 
+@app.post("/receipt/{receipt_id}/new-product/{item_index}/undo")
+async def undo_new_product(
+    request: Request,
+    receipt_id: str,
+    item_index: int,
+):
+    row = get_receipt(receipt_id)
+
+    if not row:
+        return HTMLResponse("Receipt not found", status_code=404)
+
+    items = json.loads(row["items_json"])
+
+    if item_index < 0 or item_index >= len(items):
+        return HTMLResponse("Item not found", status_code=404)
+
+    item = items[item_index]
+    product_id = item.get("grocy_product_id")
+
+    if item.get("match_type") != "new" or not product_id:
+        return HTMLResponse(
+            "This new product cannot be safely undone.",
+            status_code=400,
+        )
+
+    affected_indexes = [
+        index
+        for index, candidate in enumerate(items)
+        if (
+            candidate.get("match_type") == "new"
+            and candidate.get("grocy_product_id") == product_id
+        )
+    ]
+
+    if any(
+        items[index].get("status") == "Imported"
+        or items[index].get("transaction_id")
+        for index in affected_indexes
+    ):
+        return HTMLResponse(
+            "This new product cannot be safely undone.",
+            status_code=400,
+        )
+
+    form = await request.form()
+    force = form.get("force") == "1"
+
+    selected_item_indexes = set()
+    raw_selected_indexes = (
+        form.getlist("selected_item_indexes")
+        if hasattr(form, "getlist")
+        else form.get("selected_item_indexes", [])
+    )
+    if isinstance(raw_selected_indexes, str):
+        raw_selected_indexes = [raw_selected_indexes]
+
+    for raw_index in raw_selected_indexes:
+        try:
+            selected_index = int(raw_index)
+        except (TypeError, ValueError):
+            continue
+
+        if 0 <= selected_index < len(items):
+            selected_item_indexes.add(selected_index)
+
+    affected_indexes = sorted(
+        set(affected_indexes) | selected_item_indexes
+    )
+
+    if len(affected_indexes) > 1 and not force:
+        return json_response(
+            {
+                "ok": False,
+                "requires_confirmation": True,
+                "warning": (
+                    f"This product is assigned to {len(affected_indexes)} "
+                    "receipt lines. Undoing it will remove the product "
+                    "from all of them."
+                ),
+                "affected_item_indexes": affected_indexes,
+            },
+            status_code=409,
+        )
+
+    try:
+        grocy_delete(f"/api/objects/products/{int(product_id)}")
+
+        for index in affected_indexes:
+            affected_item = items[index]
+            affected_item["grocy_product_id"] = None
+            affected_item["grocy_product_name"] = ""
+            affected_item["match_type"] = None
+            affected_item["new_product_config"] = None
+            affected_item["new_product_status"] = None
+            affected_item["new_product_error"] = ""
+
+        receipt_storage.update(
+            receipt_id,
+            items_json=json.dumps(items, ensure_ascii=False),
+        )
+
+        return json_response(
+            {
+                "ok": True,
+                "product_id": int(product_id),
+                "affected_item_indexes": affected_indexes,
+            }
+        )
+
+    except Exception as exc:
+        item["new_product_error"] = str(exc)
+
+        receipt_storage.update(
+            receipt_id,
+            items_json=json.dumps(items, ensure_ascii=False),
+        )
+
+        return json_response(
+            {
+                "ok": False,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+
 @app.post("/receipt/{receipt_id}/item/{item_index}/undo")
 async def undo_import(
     request: Request,
@@ -249,20 +376,29 @@ async def unlink_mapping(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse("Receipt not found", status_code=404)
+        return json_response(
+            {"ok": False, "error": "Receipt not found"},
+            status_code=404,
+        )
 
     metadata = json.loads(row["metadata_json"])
     items = json.loads(row["items_json"])
 
     if item_index < 0 or item_index >= len(items):
-        return HTMLResponse("Item not found", status_code=404)
+        return json_response(
+            {"ok": False, "error": "Item not found"},
+            status_code=404,
+        )
 
     item = items[item_index]
     article_number = item.get("article_number")
 
     if not article_number or not item.get("grocy_product_id"):
-        return HTMLResponse(
-            "This item does not have a saved mapping.",
+        return json_response(
+            {
+                "ok": False,
+                "error": "This item does not have a saved mapping.",
+            },
             status_code=400,
         )
 
@@ -281,10 +417,10 @@ async def unlink_mapping(
         items_json=json.dumps(items, ensure_ascii=False),
     )
 
-    return RedirectResponse(
-        f"/receipt/{receipt_id}",
-        status_code=303,
-    )
+    return json_response({
+        "ok": True,
+        "item_index": item_index,
+    })
 
 
 @app.post("/receipt/{receipt_id}/delete")
@@ -554,17 +690,19 @@ async def stage_new_product(
             for unit in quantity_units
         }
 
-        item["new_product_config"] = {
-            "name": product_payload["name"],
-            "location_id": str(location_id),
-            "location_name": location_names[str(location_id)],
-            "purchase_unit_id": str(purchase_unit_id),
-            "purchase_unit_name": unit_names[str(purchase_unit_id)],
-            "stock_unit_id": str(stock_unit_id),
-            "stock_unit_name": unit_names[str(stock_unit_id)],
-            "conversion_factor": str(conversion_factor),
-        }
-        item["new_product_status"] = "ready"
+        created = create_new_grocy_product(
+            product_payload=product_payload,
+            purchase_unit_id=purchase_unit_id,
+            stock_unit_id=stock_unit_id,
+            conversion_factor=conversion_factor,
+        )
+        product_id = int(created["product_id"])
+
+        item["grocy_product_id"] = product_id
+        item["grocy_product_name"] = product_payload["name"]
+        item["match_type"] = "new"
+        item["new_product_config"] = None
+        item["new_product_status"] = "success"
         item["new_product_error"] = ""
 
         receipt_storage.update(
@@ -578,6 +716,7 @@ async def stage_new_product(
         return json_response(
             {
                 "ok": True,
+                "product_id": product_id,
                 "name": product_payload["name"],
                 "location_name": location_names[str(location_id)],
                 "purchase_unit_name": unit_names[str(purchase_unit_id)],

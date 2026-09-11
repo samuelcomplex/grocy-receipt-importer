@@ -50,6 +50,10 @@ def grocy_put(path, payload):
     return grocy_request("PUT", path, payload)
 
 
+def grocy_delete(path):
+    return grocy_request("DELETE", path, expect_json=False)
+
+
 def load_products():
     return grocy_get("/api/objects/products")
 

@@ -97,7 +97,7 @@
         name="include_{{ loop.index0 }}"
         id="include-{{ loop.index0 }}"
         data-imported="{{ 'true' if item.status == 'Imported' else 'false' }}"
-        data-new-product-configured="{{ 'true' if item.new_product_config else 'false' }}"
+        data-new-product-configured="{{ 'true' if item.grocy_product_id else 'false' }}"
         {% if item.status == "Imported" %}disabled{% endif %}
         {% if item.status != "Imported"
               and item.status != "Skipped"
@@ -212,9 +212,22 @@
 >i</span>
 {% endif %}
 
-{% if item.new_product_status == "error" %}
+{% if item.new_product_status == "success" and item.match_type == "new" %}
+<div class="new-product-status new-product-status-success">
+    New product created in Grocy.
+</div>
+{% if item.status != "Imported" %}
+<button
+    type="button"
+    class="undo-new-product-button secondary-button"
+    data-item-index="{{ loop.index0 }}"
+>
+    Undo product creation
+</button>
+{% endif %}
+{% elif item.new_product_status == "error" %}
 <div class="new-product-status new-product-status-failed">
-    New product configuration failed: {{ item.new_product_error }}
+    New product creation failed: {{ item.new_product_error }}
 </div>
 {% elif item.create_product_status == "failed" %}
 <div class="new-product-status new-product-status-failed">
@@ -262,7 +275,6 @@
     class="unlink-button"
     title="{{ t('ui.unlink_mapping') }}"
     aria-label="{{ t('ui.unlink_mapping') }}"
-    onclick="return confirm('{{ t("ui.unlink_mapping_confirm") }}');"
 >
     🔗
 </button>
@@ -273,6 +285,8 @@
     {{ t("ui.match_confidence") }}: {{ (item.match_score * 100)|round|int }}%
 </div>
 {% endif %}
+
+<div class="unlink-error small" hidden></div>
 
 </div>
 
@@ -479,7 +493,7 @@
                     class="primary-button"
                     id="new-product-modal-submit"
                 >
-                    Configure product
+                    Create product
                 </button>
             </div>
         </form>
@@ -628,6 +642,17 @@
 <script>
 const anotherFile = document.getElementById("another-file");
 const anotherFileButton = document.getElementById("another-file-button");
+
+anotherFileButton.addEventListener("click", function (event) {
+    event.preventDefault();
+    anotherFile.click();
+});
+
+anotherFile.addEventListener("change", function () {
+    if (anotherFile.files.length > 0) {
+        anotherFile.form.submit();
+    }
+});
 
 document.querySelectorAll("select[data-include-checkbox]").forEach(function (select) {
     const checkbox = document.getElementById(
@@ -830,7 +855,7 @@ function openNewProductModal(index, productSelect) {
     }
 
     newProductModalTitle.textContent =
-        "Configure new product";
+        "Create new product";
 
     setNewProductModalError("");
     updateNewProductConversion();
@@ -866,6 +891,217 @@ document.querySelectorAll(
             openNewProductModal(index, select);
         }
     });
+});
+
+document.addEventListener("click", async function (event) {
+    const button = event.target.closest(".unlink-button");
+
+    if (!button) {
+        return;
+    }
+
+    event.preventDefault();
+
+    if (!confirm(button.getAttribute("onclick") ? "" : "{{ t("ui.unlink_mapping_confirm") }}")) {
+        return;
+    }
+
+    const row = button.closest(".product-selection");
+    const errorElement = row?.querySelector(".unlink-error");
+
+    if (errorElement) {
+        errorElement.hidden = true;
+        errorElement.textContent = "";
+    }
+
+    button.disabled = true;
+
+    try {
+        const response = await fetch(button.formAction, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams(),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            throw new Error(
+                data.error || "Unable to unlink saved mapping."
+            );
+        }
+
+        const select = row?.querySelector('select[id^="product-"]');
+
+        if (select) {
+            select.value = "";
+            select.dataset.previousValue = "";
+            select.dispatchEvent(new Event("change"));
+        }
+
+        button.remove();
+
+        row?.querySelectorAll(".mapping-indicator").forEach(function (element) {
+            element.remove();
+        });
+
+        if (row) {
+            const mappingIndicator = document.createElement("span");
+            mappingIndicator.className = "mapping-indicator mapping-none";
+            mappingIndicator.title = "No matching product";
+            mappingIndicator.setAttribute(
+                "aria-label",
+                "No matching product"
+            );
+            mappingIndicator.textContent = "!";
+            row.appendChild(mappingIndicator);
+        }
+    } catch (error) {
+        button.disabled = false;
+
+        if (errorElement) {
+            errorElement.textContent = error.message;
+            errorElement.hidden = false;
+        }
+    }
+});
+
+document.addEventListener("click", async function (event) {
+    const button = event.target.closest(".undo-new-product-button");
+
+    if (!button) {
+        return;
+    }
+
+    if (!confirm("Delete this newly-created Grocy product?")) {
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const sourceIndex = button.dataset.itemIndex;
+        const sourceSelect = document.getElementById(
+            "product-" + sourceIndex
+        );
+        const selectedProductId = sourceSelect?.value;
+
+        const selectedItemIndexes = Array.from(
+            document.querySelectorAll('select[id^="product-"]')
+        )
+            .filter(function (select) {
+                return select.value === selectedProductId;
+            })
+            .map(function (select) {
+                return select.id.replace("product-", "");
+            });
+
+        const url =
+            "{{ request.url.path.rsplit('/review', 1)[0] }}/new-product/"
+            + sourceIndex + "/undo";
+
+        const undoBody = new URLSearchParams();
+        selectedItemIndexes.forEach(function (index) {
+            undoBody.append("selected_item_indexes", index);
+        });
+
+        let response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: undoBody,
+        });
+
+        let data = await response.json();
+
+        if (
+            response.status === 409
+            && data.requires_confirmation
+        ) {
+            if (!confirm(data.warning)) {
+                button.disabled = false;
+                return;
+            }
+
+            undoBody.append("force", "1");
+
+            response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: undoBody,
+            });
+
+            data = await response.json();
+        }
+
+        if (!response.ok || !data.ok) {
+            throw new Error(
+                data.error || "Unable to undo product creation."
+            );
+        }
+
+        const productId = String(data.product_id);
+        const affectedIndexes = new Set(
+            data.affected_item_indexes.map(String)
+        );
+
+        document.querySelectorAll(
+            'select[id^="product-"]'
+        ).forEach(function (select) {
+            const index = select.id.replace("product-", "");
+            const option = Array.from(select.options).find(
+                function (option) {
+                    return option.value === productId;
+                }
+            );
+
+            if (affectedIndexes.has(index)) {
+                select.value = "";
+                select.dataset.previousValue = "";
+                select.dispatchEvent(new Event("change"));
+            }
+
+            if (option) {
+                option.remove();
+            }
+        });
+
+        affectedIndexes.forEach(function (index) {
+            const row = document.getElementById(
+                "product-" + index
+            )?.closest(".product-selection");
+
+            if (!row) {
+                return;
+            }
+
+            row.querySelectorAll(
+                ".undo-new-product-button, .new-product-status, .mapping-indicator, .unlink-button"
+            ).forEach(function (element) {
+                element.remove();
+            });
+
+            const mappingIndicator = document.createElement("span");
+            mappingIndicator.className =
+                "mapping-indicator mapping-none";
+            mappingIndicator.title = "No matching product";
+            mappingIndicator.setAttribute(
+                "aria-label",
+                "No matching product"
+            );
+            mappingIndicator.textContent = "!";
+
+            row.appendChild(mappingIndicator);
+        });
+    } catch (error) {
+        button.disabled = false;
+        alert(error.message);
+    }
 });
 
 document.getElementById(
@@ -931,18 +1167,96 @@ newProductModalForm.addEventListener("submit", async function (event) {
 
         if (!response.ok || !data.ok) {
             throw new Error(
-                data.error || "Unable to stage the new product."
+                data.error || "Unable to create the new product."
             );
         }
 
-        activeProductSelect.value = "new";
-        activeProductSelect.dataset.previousValue = "new";
+        const createdProductId = String(data.product_id);
+        const productName = data.name;
+
+        document.querySelectorAll(
+            'select[id^="product-"]'
+        ).forEach(function (select) {
+            const alreadyExists = Array.from(select.options).some(
+                function (option) {
+                    return option.value === createdProductId;
+                }
+            );
+
+            if (!alreadyExists) {
+                select.add(new Option(productName, createdProductId));
+            }
+        });
+
+        if (activeProductSelect) {
+            activeProductSelect.value = createdProductId;
+            activeProductSelect.dataset.previousValue = createdProductId;
+            activeProductSelect.dispatchEvent(new Event("change"));
+
+            const row = activeProductSelect.closest(".product-selection");
+
+            if (row) {
+                const existingStatus = row.querySelector(
+                    ".new-product-status"
+                );
+
+                if (existingStatus) {
+                    existingStatus.remove();
+                }
+
+                const status = document.createElement("div");
+                status.className =
+                    "new-product-status new-product-status-success";
+                status.textContent = "New product created in Grocy.";
+
+                const existingUndo = row.querySelector(
+                    ".undo-new-product-button"
+                );
+
+                if (!existingUndo) {
+                    const undoButton = document.createElement("button");
+                    undoButton.type = "button";
+                    undoButton.className =
+                        "undo-new-product-button secondary-button";
+                    undoButton.dataset.itemIndex = activeNewProductIndex;
+                    undoButton.textContent = "Undo product creation";
+
+                    row.insertBefore(
+                        status,
+                        row.querySelector(".undo-button, .mapping-indicator")
+                    );
+
+                    row.insertBefore(
+                        undoButton,
+                        row.querySelector(".undo-button, .mapping-indicator")
+                    );
+                } else {
+                    row.insertBefore(
+                        status,
+                        existingUndo
+                    );
+                }
+
+                row.querySelectorAll(".mapping-indicator").forEach(
+                    function (element) {
+                        element.remove();
+                    }
+                );
+
+                const mappingIndicator = document.createElement("span");
+                mappingIndicator.className =
+                    "mapping-indicator mapping-saved";
+                mappingIndicator.title = "Saved mapping";
+                mappingIndicator.setAttribute(
+                    "aria-label",
+                    "Saved mapping"
+                );
+                mappingIndicator.textContent = "i";
+                row.appendChild(mappingIndicator);
+            }
+        }
 
         closeNewProductModal(false);
-
-        // Staging is persisted server-side. Reload so the row is rendered
-        // from the authoritative staged configuration.
-        window.location.reload();
 
     } catch (error) {
         setNewProductModalError(error.message);

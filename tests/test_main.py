@@ -455,6 +455,7 @@ class FakeImportReceiptStorage:
 class FakeMappingStorage:
     def __init__(self):
         self.saved = []
+        self.deleted = []
 
     def save(
         self,
@@ -472,6 +473,9 @@ class FakeMappingStorage:
             )
         )
 
+    def delete(self, store_org, article_number):
+        self.deleted.append((store_org, article_number))
+
 
 class FakeFormRequest:
     def __init__(self, values):
@@ -479,6 +483,358 @@ class FakeFormRequest:
 
     async def form(self):
         return self.values
+
+
+@pytest.mark.anyio
+async def test_stage_new_product_creates_product_immediately(monkeypatch):
+    storage = FakeImportReceiptStorage(make_import_receipt())
+    created_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [{"id": 42, "name": "Milk"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "load_locations",
+        lambda: [{"id": 3, "name": "Kitchen"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "load_quantity_units",
+        lambda: [
+            {"id": 3, "name": "pack"},
+            {"id": 5, "name": "piece"},
+        ],
+    )
+
+    def fake_create(**kwargs):
+        created_calls.append(kwargs)
+        return {
+            "product_id": 99,
+            "product": {"id": 99, "name": "Coffee"},
+            "conversion_factor": "2",
+        }
+
+    monkeypatch.setattr(main, "create_new_grocy_product", fake_create)
+
+    result = await main.stage_new_product(
+        FakeFormRequest({
+            "item_index": "0",
+            "name": "Coffee",
+            "location_id": "3",
+            "purchase_unit_id": "3",
+            "stock_unit_id": "5",
+            "conversion_factor": "2",
+        }),
+        "receipt-1",
+    )
+
+    result_data = json.loads(result.body)
+
+    assert result_data["ok"] is True
+    assert result_data["product_id"] == 99
+    assert result_data["name"] == "Coffee"
+
+    assert created_calls == [{
+        "product_payload": {
+            "name": "Coffee",
+            "location_id": 3,
+            "qu_id_purchase": 3,
+            "qu_id_stock": 5,
+            "qu_id_consume": 5,
+            "qu_id_price": 3,
+            "min_stock_amount": 0,
+        },
+        "purchase_unit_id": "3",
+        "stock_unit_id": "5",
+        "conversion_factor": "2",
+    }]
+
+    item = result_from_storage = json.loads(storage.receipt["items_json"])[0]
+    assert item["grocy_product_id"] == 99
+    assert item["grocy_product_name"] == "Coffee"
+    assert item["match_type"] == "new"
+    assert item["new_product_config"] is None
+    assert item["new_product_status"] == "success"
+
+
+@pytest.mark.anyio
+async def test_stage_new_product_failure_does_not_assign_product(monkeypatch):
+    storage = FakeImportReceiptStorage(make_import_receipt())
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "load_products",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        main,
+        "load_locations",
+        lambda: [{"id": 3, "name": "Kitchen"}],
+    )
+    monkeypatch.setattr(
+        main,
+        "load_quantity_units",
+        lambda: [
+            {"id": 3, "name": "pack"},
+            {"id": 5, "name": "piece"},
+        ],
+    )
+
+    def fail_create(**kwargs):
+        raise RuntimeError("Grocy unavailable")
+
+    monkeypatch.setattr(main, "create_new_grocy_product", fail_create)
+
+    result = await main.stage_new_product(
+        FakeFormRequest({
+            "item_index": "0",
+            "name": "Coffee",
+            "location_id": "3",
+            "purchase_unit_id": "3",
+            "stock_unit_id": "5",
+            "conversion_factor": "2",
+        }),
+        "receipt-1",
+    )
+
+    result_data = json.loads(result.body)
+
+    assert result_data["ok"] is False
+    assert result_data["error"] == "Grocy unavailable"
+
+    item = json.loads(storage.receipt["items_json"])[0]
+    assert item.get("grocy_product_id") is None
+    assert item.get("grocy_product_name") in (None, "")
+    assert item["new_product_status"] == "error"
+    assert item["new_product_error"] == "Grocy unavailable"
+
+
+@pytest.mark.anyio
+async def test_undo_new_product_deletes_product_and_clears_assignment(monkeypatch):
+    receipt = make_import_receipt()
+    items = json.loads(receipt["items_json"])
+    items[0]["grocy_product_id"] = 99
+    items[0]["grocy_product_name"] = "Coffee"
+    items[0]["match_type"] = "new"
+    items[0]["new_product_status"] = "success"
+    receipt["items_json"] = json.dumps(items)
+
+    storage = FakeImportReceiptStorage(receipt)
+    delete_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_delete",
+        lambda path: delete_calls.append(path),
+    )
+
+    result = await main.undo_new_product(
+        FakeFormRequest({}),
+        "receipt-1",
+        0,
+    )
+
+    result_data = json.loads(result.body)
+
+    assert result_data["ok"] is True
+    assert delete_calls == ["/api/objects/products/99"]
+
+    item = json.loads(storage.receipt["items_json"])[0]
+    assert item["grocy_product_id"] is None
+    assert item["grocy_product_name"] == ""
+    assert item["match_type"] is None
+    assert item["new_product_status"] is None
+    assert item["new_product_error"] == ""
+
+
+@pytest.mark.anyio
+async def test_undo_new_product_warns_when_product_is_used_on_multiple_lines(monkeypatch):
+    receipt = make_import_receipt()
+    items = json.loads(receipt["items_json"])
+    items.append(dict(items[0]))
+    for item in items[:2]:
+        item["grocy_product_id"] = 99
+        item["grocy_product_name"] = "Coffee"
+        item["match_type"] = "new"
+        item["new_product_status"] = "success"
+    receipt["items_json"] = json.dumps(items)
+
+    storage = FakeImportReceiptStorage(receipt)
+    delete_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_delete",
+        lambda path: delete_calls.append(path),
+    )
+
+    result = await main.undo_new_product(
+        FakeFormRequest({}),
+        "receipt-1",
+        0,
+    )
+
+    result_data = json.loads(result.body)
+
+    assert result.status_code == 409
+    assert result_data["ok"] is False
+    assert result_data["requires_confirmation"] is True
+    assert result_data["affected_item_indexes"] == [0, 1]
+    assert "2 receipt lines" in result_data["warning"]
+    assert delete_calls == []
+
+
+@pytest.mark.anyio
+async def test_undo_new_product_includes_client_selected_lines(monkeypatch):
+    receipt = make_import_receipt()
+    items = json.loads(receipt["items_json"])
+    items.append(dict(items[0]))
+    items[0]["grocy_product_id"] = 99
+    items[0]["grocy_product_name"] = "Coffee"
+    items[0]["match_type"] = "new"
+    items[0]["new_product_status"] = "success"
+    items[1]["grocy_product_id"] = None
+    items[1]["grocy_product_name"] = ""
+    items[1]["match_type"] = None
+    receipt["items_json"] = json.dumps(items)
+
+    storage = FakeImportReceiptStorage(receipt)
+    delete_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_delete",
+        lambda path: delete_calls.append(path),
+    )
+
+    result = await main.undo_new_product(
+        FakeFormRequest({"selected_item_indexes": ["0", "1"]}),
+        "receipt-1",
+        0,
+    )
+
+    assert result.status_code == 409
+    body = json.loads(result.body)
+    assert body["requires_confirmation"] is True
+    assert body["affected_item_indexes"] == [0, 1]
+    assert delete_calls == []
+
+
+@pytest.mark.anyio
+async def test_undo_new_product_force_deletes_and_clears_all_assignments(monkeypatch):
+    receipt = make_import_receipt()
+    items = json.loads(receipt["items_json"])
+    items.append(dict(items[0]))
+    for item in items[:2]:
+        item["grocy_product_id"] = 99
+        item["grocy_product_name"] = "Coffee"
+        item["match_type"] = "new"
+        item["new_product_status"] = "success"
+        item["new_product_error"] = ""
+        item["new_product_config"] = None
+    receipt["items_json"] = json.dumps(items)
+
+    storage = FakeImportReceiptStorage(receipt)
+    delete_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_delete",
+        lambda path: delete_calls.append(path),
+    )
+
+    result = await main.undo_new_product(
+        FakeFormRequest({"force": "1"}),
+        "receipt-1",
+        0,
+    )
+
+    result_data = json.loads(result.body)
+    saved_items = json.loads(storage.receipt["items_json"])
+
+    assert result_data["ok"] is True
+    assert result_data["product_id"] == 99
+    assert result_data["affected_item_indexes"] == [0, 1]
+    assert delete_calls == ["/api/objects/products/99"]
+
+    for index in [0, 1]:
+        assert saved_items[index]["grocy_product_id"] is None
+        assert saved_items[index]["grocy_product_name"] == ""
+        assert saved_items[index]["match_type"] is None
+        assert saved_items[index]["new_product_config"] is None
+        assert saved_items[index]["new_product_status"] is None
+        assert saved_items[index]["new_product_error"] == ""
+
+
+@pytest.mark.anyio
+async def test_unlink_mapping_returns_json_success(monkeypatch):
+    receipt = make_import_receipt()
+    items = json.loads(receipt["items_json"])
+    items[0]["grocy_product_id"] = 42
+    items[0]["grocy_product_name"] = "Milk"
+    items[0]["match_type"] = "saved"
+    receipt["items_json"] = json.dumps(items)
+
+    storage = FakeImportReceiptStorage(receipt)
+    mappings = FakeMappingStorage()
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(main, "mapping_storage", mappings)
+
+    result = await main.unlink_mapping(
+        FakeFormRequest({}),
+        "receipt-1",
+        0,
+    )
+
+    result_data = json.loads(result.body)
+    saved_items = json.loads(storage.receipt["items_json"])
+
+    assert result.status_code == 200
+    assert result_data["ok"] is True
+    assert result_data["item_index"] == 0
+    assert "grocy_product_id" not in saved_items[0]
+    assert "grocy_product_name" not in saved_items[0]
+    assert "match_type" not in saved_items[0]
+
+
+@pytest.mark.anyio
+async def test_undo_new_product_refuses_imported_product(monkeypatch):
+    receipt = make_import_receipt()
+    items = json.loads(receipt["items_json"])
+    items[0]["grocy_product_id"] = 99
+    items[0]["grocy_product_name"] = "Coffee"
+    items[0]["match_type"] = "new"
+    items[0]["status"] = "Imported"
+    receipt["items_json"] = json.dumps(items)
+
+    storage = FakeImportReceiptStorage(receipt)
+    delete_calls = []
+
+    monkeypatch.setattr(main, "receipt_storage", storage)
+    monkeypatch.setattr(
+        main,
+        "grocy_delete",
+        lambda path: delete_calls.append(path),
+    )
+
+    result = await main.undo_new_product(
+        FakeFormRequest({}),
+        "receipt-1",
+        0,
+    )
+
+    assert result.status_code == 400
+    assert delete_calls == []
 
 
 @pytest.mark.anyio

@@ -14,7 +14,33 @@ def _decimal(value):
     if isinstance(value, Decimal):
         return value
 
-    return Decimal(str(value).replace(",", "."))
+    text = str(value).strip().replace(" ", "")
+
+    if "," in text and "." in text:
+        decimal_separator = "," if text.rfind(",") > text.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        text = text.replace(thousands_separator, "")
+        text = text.replace(decimal_separator, ".")
+    elif "," in text:
+        if text.count(",") > 1:
+            parts = text.split(",")
+            if not all(len(part) == 3 for part in parts[1:]):
+                raise ValueError(f"Invalid numeric value: {value!r}")
+            text = "".join(parts)
+        elif len(text.rsplit(",", 1)[1]) == 3:
+            text = text.replace(",", "")
+        else:
+            text = text.replace(",", ".")
+    elif "." in text:
+        if text.count(".") > 1:
+            parts = text.split(".")
+            if not all(len(part) == 3 for part in parts[1:]):
+                raise ValueError(f"Invalid numeric value: {value!r}")
+            text = "".join(parts)
+        elif len(text.rsplit(".", 1)[1]) == 3:
+            text = text.replace(".", "")
+
+    return Decimal(text)
 
 
 def _parse_date(value):

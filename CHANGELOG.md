@@ -4,7 +4,28 @@ All notable changes to Grocy Receipt Importer are documented here.
 
 The project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.4] - 2026-09-11
+
+### Added
+
+- Immediate creation of new Grocy products from the receipt review, with the created product made available to all receipt-line selectors.
+- Undo for newly-created Grocy products, including confirmation when a product is assigned to multiple receipt lines.
+- In-place removal of undone products and affected mappings without reloading the receipt review.
+- Parser-agnostic numeric normalization to canonical `Decimal` values for common European and US number formats.
+
+### Changed
+
+- New-product creation is separated from receipt import and no longer requires importing the receipt to create the Grocy product.
+- Saved mapping unlinking now completes in place on the receipt review instead of navigating to a separate response page.
+- Expanded automated coverage for numeric parsing, new-product creation and undo, multi-line assignments, and mapping actions.
+
+### Fixed
+
+- Prevented stale unlink controls from remaining after undoing a newly-created product.
+- Prevented receipt-review undo URLs from duplicating the receipt path.
+- Prevented expected multi-line undo confirmation requests from losing the selected receipt-line indexes.
+- Kept mapping-action errors on the receipt review page instead of displaying standalone error pages.
+
 
 ## [0.3.3] - 2026-09-08
 
