@@ -499,6 +499,7 @@ class FakeLanguageRequest(FakeFormRequest):
     def __init__(self, values, referer="/"):
         super().__init__(values)
         self.headers = {"referer": referer}
+        self.app = main.app
 
 
 @pytest.mark.anyio
@@ -510,6 +511,18 @@ async def test_set_language_redirects_and_sets_cookie():
 
     assert result.status_code == 303
     assert result.headers["location"] == "/receipt/test"
+    assert "language=sv" in result.headers["set-cookie"]
+
+
+@pytest.mark.anyio
+async def test_set_language_falls_back_when_referer_has_no_get_route():
+    result = await main.set_language(
+        FakeLanguageRequest({"language": "sv"}, "/receipt/test/import"),
+        "sv",
+    )
+
+    assert result.status_code == 303
+    assert result.headers["location"] == "/"
     assert "language=sv" in result.headers["set-cookie"]
 
 

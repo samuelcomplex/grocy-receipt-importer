@@ -13,7 +13,7 @@
   "ui.receipt_number": "Receipt nr",
   "ui.upload_pdf": "Upload PDF",
   "ui.parse_receipt": "Parse receipt",
-  "ui.receipt_not_imported": "The receipt is not imported into Grocy until you explicitly press \"Import selected items\".",
+  "ui.receipt_not_imported": "The receipt is not imported into Grocy until you explicitly press \"Import items\".",
   "ui.recent_receipts": "Recent receipts",
   "ui.store": "Store",
   "ui.file": "File",

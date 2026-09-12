@@ -13,7 +13,7 @@
     "ui.receipt_number": "Kvitto nr",
     "ui.upload_pdf": "Ladda upp PDF",
     "ui.parse_receipt": "Läs in kvitto",
-    "ui.receipt_not_imported": "Kvittot importeras inte till Grocy förrän du uttryckligen trycker på \"Importera valda artiklar\".",
+    "ui.receipt_not_imported": "Kvittot importeras inte till Grocy förrän du uttryckligen trycker på \"Importera artiklar\".",
     "ui.recent_receipts": "Senaste kvittona",
     "ui.store": "Butik",
     "ui.file": "Fil",

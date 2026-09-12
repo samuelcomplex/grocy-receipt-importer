@@ -3,6 +3,7 @@ import io
 import json
 import uuid
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from app.config import (
     MAPPING_STORAGE,
@@ -38,6 +39,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pypdf import PdfReader
 from plugins.discovery import find_parser
+from starlette.routing import Match
 
 
 def create_storages():
@@ -156,13 +158,25 @@ def home(request: Request):
     )
 
 
+def _redirect_target(request: Request, referer: str) -> str:
+    path = urlsplit(referer).path or "/"
+
+    for route in request.app.routes:
+        match, _ = route.matches({"type": "http", "method": "GET", "path": path})
+
+        if match == Match.FULL:
+            return referer
+
+    return "/"
+
+
 @app.post("/language")
 async def set_language(request: Request, language: str = Form(...)):
     if language not in TRANSLATIONS:
         language = DEFAULT_LANGUAGE
 
     response = RedirectResponse(
-        url=request.headers.get("referer", "/"),
+        url=_redirect_target(request, request.headers.get("referer", "/")),
         status_code=303,
     )
     response.set_cookie(
