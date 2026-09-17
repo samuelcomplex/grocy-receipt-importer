@@ -4,6 +4,25 @@ All notable changes to Grocy Receipt Importer are documented here.
 
 The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.5] - 2026-09-17
+
+### Added
+
+- Persistent ignored receipt-item mappings that are reapplied when receipts are reviewed again.
+- Expanded parser contract coverage for common receipt metadata and item fields.
+- ICA parser coverage using layout-preserved PDF text.
+
+### Changed
+
+- Standardized PDF receipt text extraction on `pypdf` with `extraction_mode="layout"`.
+- Adapted ICA receipt parsing to the standardized layout-preserved text representation.
+- Standardized the common receipt metadata field for receipt numbers as `receipt_no`.
+- Receipt-review errors are kept on the current page where appropriate.
+
+### Fixed
+
+- Ignored receipt items can now be saved and restored through the same alias storage mechanism as product mappings.
+
 ## [0.3.4] - 2026-09-11
 
 ### Added

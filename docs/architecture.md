@@ -10,7 +10,7 @@ The application is structured around a clear boundary:
 Receipt PDF
     |
     v
-PDF text extraction
+PDF text extraction (layout mode)
     |
     v
 Plugin discovery
@@ -38,7 +38,7 @@ The key architectural principle is that retailer-specific receipt knowledge belo
 The core application is responsible for:
 
 - accepting receipt PDF uploads
-- extracting text from receipt PDFs
+- extracting receipt text from PDFs using `pypdf` with `extraction_mode="layout"`
 - discovering parser plugins
 - selecting the matching parser
 - applying saved product mappings
@@ -105,6 +105,10 @@ matches(text) -> bool
 parse(text) -> dict
 ```
 
+The core application passes layout-preserved PDF text to these methods. Parsers should assume that whitespace and column positioning may carry meaning for the retailer's receipt format.
+
+PDF extraction is a core application responsibility. Parser plugins must not perform PDF extraction themselves or choose a different extraction mode.
+
 A parser is responsible for:
 
 - recognizing whether the receipt text belongs to its retailer
@@ -163,7 +167,7 @@ For receipt pricing, the `net` value represents the total price for the receipt 
 
 The core owns:
 
-- PDF handling and text extraction
+- PDF handling and layout-preserving text extraction
 - plugin discovery
 - receipt parsing orchestration
 - database/storage access
@@ -206,7 +210,7 @@ This separation keeps retailer-specific knowledge isolated and allows the core a
 The receipt import lifecycle is:
 
 1. Upload receipt PDF.
-2. Extract receipt text.
+2. Extract receipt text using layout mode.
 3. Discover available parsers.
 4. Select the parser that recognizes the receipt.
 5. Parse the receipt.

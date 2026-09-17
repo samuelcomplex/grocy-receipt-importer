@@ -35,9 +35,17 @@ The base class is defined in:
 plugins/base.py
 ```
 
+## Receipt text input
+
+The core application extracts receipt PDFs using `pypdf` with `extraction_mode="layout"` before passing the resulting text to parser plugins.
+
+Parser methods receive this layout-preserved text. New parsers should assume that whitespace and column positioning may carry meaning in the receipt format.
+
+Do not perform PDF extraction inside a parser and do not select a different PDF extraction mode. PDF extraction is a core application responsibility.
+
 ## `matches()`
 
-The `matches()` method receives the text extracted from the uploaded PDF.
+The `matches()` method receives the layout-preserved text extracted from the uploaded PDF.
 
 Return `True` only when the receipt belongs to the retailer handled by the plugin.
 

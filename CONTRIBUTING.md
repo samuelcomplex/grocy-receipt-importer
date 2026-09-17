@@ -36,6 +36,16 @@ Plugins should not handle:
 
 Changes that affect the core application should be made only when they are genuinely required.
 
+## Receipt text extraction
+
+The core application extracts PDF receipt text using `pypdf` with `extraction_mode="layout"` before passing the text to parser plugins.
+
+New parsers must assume that the input text preserves the receipt's visual layout and column positioning. Use that layout when the retailer's receipt format depends on columns or spatial relationships.
+
+Parsers must not perform PDF extraction themselves or choose a different PDF extraction mode.
+
+Existing parsers do not need to be rewritten solely to adopt layout-aware parsing. Adapt an existing parser when its current parsing logic does not work correctly with the standardized layout representation.
+
 ## Tests
 
 New parser functionality should include tests.
