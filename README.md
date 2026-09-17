@@ -1,6 +1,6 @@
 # Grocy Receipt Importer
 
-**Version 0.3.4**
+**Version 0.3.5**
 
 A self-hosted web application that extracts receipt data from PDF files, lets you review and map products, and imports selected items into [Grocy](https://grocy.info/).
 
@@ -271,7 +271,7 @@ The project follows [Semantic Versioning](https://semver.org/):
 MAJOR.MINOR.PATCH
 ```
 
-The current release is **v0.3.4**.
+The current release is **v0.3.5**.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
@@ -287,6 +287,14 @@ Do not commit:
 - private database files
 
 If you discover a security issue, please report it privately rather than opening a public issue with sensitive details.
+
+## What's new in 0.3.5
+
+- Ignored receipt items can be saved and automatically reapplied when the receipt is reviewed again.
+- PDF receipt text extraction now uses layout-preserving extraction through `pypdf`.
+- The ICA parser was adapted to the standardized layout-preserved receipt text.
+- Common receipt metadata and item fields now have expanded parser contract coverage.
+- Receipt-review errors are kept on the current page where appropriate.
 
 ## What's new in 0.3.4
 
