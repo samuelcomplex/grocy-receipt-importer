@@ -70,5 +70,7 @@
   "ui.conversion": "Conversion",
   "ui.same_as_purchase_unit": "Same as purchase unit",
   "ui.import_unit": "Import unit",
-  "ui.create_product_and_import": "Create product & import"
+  "ui.create_product_and_import": "Create product & import",
+  "ui.receipt_parser_not_found": "No receipt parser recognized this receipt.",
+  "ui.ignore_item": "Ignore"
 }

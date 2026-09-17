@@ -1,5 +1,7 @@
 import json
 
+import app.storage as storage_module
+
 from app.storage import (
     MemoryReceiptStorage,
     NullAliasStorage,
@@ -41,6 +43,33 @@ def test_memory_receipt_storage():
     storage.delete("receipt-1")
 
     assert storage.get("receipt-1") is None
+
+
+def test_sqlite_alias_storage_persists_ignored_mapping_by_description(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(storage_module, "DB_PATH", str(db_path))
+    monkeypatch.setattr(storage_module, "DATA_DIR", str(tmp_path))
+
+    storage = create_alias_storage("sqlite")
+    storage.save("COOP", "pet 1p 1x1kr", None, "", ignored=True)
+
+    row = storage.get("COOP", "pet 1p 1x1kr")
+    assert row["grocy_product_id"] is None
+    assert row["grocy_product_name"] == ""
+    assert row["ignored"] == 1
+
+    new_storage = create_alias_storage("sqlite")
+    row = new_storage.get("COOP", "pet 1p 1x1kr")
+    assert row["ignored"] == 1
+
+    new_storage.save("COOP", "pet 1p 1x1kr", 42, "Milk")
+
+    row = new_storage.get("COOP", "pet 1p 1x1kr")
+    assert row["grocy_product_id"] == 42
+    assert row["grocy_product_name"] == "Milk"
+    assert row["ignored"] == 0
 
 
 def test_null_mapping_storage():

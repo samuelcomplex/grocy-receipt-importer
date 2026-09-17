@@ -53,8 +53,9 @@ class AliasStorage(Protocol):
         self,
         store_org: str,
         normalized_description: str,
-        grocy_product_id: int,
+        grocy_product_id: int | None,
         grocy_product_name: str,
+        ignored: bool = False,
     ):
         ...
 
@@ -104,12 +105,103 @@ def _init_sqlite_db():
             CREATE TABLE IF NOT EXISTS aliases (
                 store_org TEXT NOT NULL,
                 normalized_description TEXT NOT NULL,
-                grocy_product_id INTEGER NOT NULL,
-                grocy_product_name TEXT NOT NULL,
+                grocy_product_id INTEGER,
+                grocy_product_name TEXT NOT NULL DEFAULT '',
+                ignored INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 PRIMARY KEY(store_org, normalized_description)
             );
         """)
+        alias_columns = {
+            row["name"]
+            for row in con.execute("PRAGMA table_info(aliases)").fetchall()
+        }
+
+        ignored_exists = con.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'ignored_items'
+            """
+        ).fetchone()
+
+        product_id_not_null = any(
+            row["name"] == "grocy_product_id" and row["notnull"]
+            for row in con.execute("PRAGMA table_info(aliases)").fetchall()
+        )
+
+        if "ignored" not in alias_columns or product_id_not_null:
+            con.execute("ALTER TABLE aliases RENAME TO aliases_legacy")
+            con.execute(
+                """
+                CREATE TABLE aliases (
+                    store_org TEXT NOT NULL,
+                    normalized_description TEXT NOT NULL,
+                    grocy_product_id INTEGER,
+                    grocy_product_name TEXT NOT NULL DEFAULT '',
+                    ignored INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(store_org, normalized_description)
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT INTO aliases (
+                    store_org,
+                    normalized_description,
+                    grocy_product_id,
+                    grocy_product_name,
+                    ignored,
+                    created_at
+                )
+                SELECT
+                    store_org,
+                    normalized_description,
+                    grocy_product_id,
+                    grocy_product_name,
+                    0,
+                    created_at
+                FROM aliases_legacy
+                """
+            )
+            con.execute("DROP TABLE aliases_legacy")
+
+        if ignored_exists:
+            con.execute(
+                """
+                UPDATE aliases
+                SET ignored = 1,
+                    grocy_product_id = NULL,
+                    grocy_product_name = ''
+                WHERE (store_org, normalized_description) IN (
+                    SELECT store_org, normalized_description
+                    FROM ignored_items
+                )
+                """
+            )
+            con.execute(
+                """
+                INSERT OR IGNORE INTO aliases (
+                    store_org,
+                    normalized_description,
+                    grocy_product_id,
+                    grocy_product_name,
+                    ignored,
+                    created_at
+                )
+                SELECT
+                    store_org,
+                    normalized_description,
+                    NULL,
+                    '',
+                    1,
+                    created_at
+                FROM ignored_items
+                """
+            )
+            con.execute("DROP TABLE ignored_items")
+
         con.commit()
 
 
@@ -354,8 +446,9 @@ class SQLiteAliasStorage:
         self,
         store_org: str,
         normalized_description: str,
-        grocy_product_id: int,
+        grocy_product_id: int | None,
         grocy_product_name: str,
+        ignored: bool = False,
     ):
         with db_connection() as con:
             con.execute(
@@ -365,15 +458,17 @@ class SQLiteAliasStorage:
                     normalized_description,
                     grocy_product_id,
                     grocy_product_name,
+                    ignored,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
                 """,
                 (
                     store_org,
                     normalized_description,
                     grocy_product_id,
                     grocy_product_name,
+                    int(ignored),
                 ),
             )
             con.commit()
@@ -399,8 +494,9 @@ class NullAliasStorage:
         self,
         store_org: str,
         normalized_description: str,
-        grocy_product_id: int,
+        grocy_product_id: int | None,
         grocy_product_name: str,
+        ignored: bool = False,
     ):
         pass
 

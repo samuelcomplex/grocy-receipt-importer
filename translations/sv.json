@@ -70,5 +70,7 @@
     "ui.product_name": "Produktnamn",
     "ui.purchase_unit": "Inköpsenhet",
     "ui.same_as_purchase_unit": "Samma som inköpsenhet",
-    "ui.stock_unit": "Lagerenhet"
+    "ui.stock_unit": "Lagerenhet",
+    "ui.receipt_parser_not_found": "Ingen kvittotolk kunde identifiera detta kvitto.",
+    "ui.ignore_item": "Ignorera"
 }
