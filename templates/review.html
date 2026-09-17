@@ -26,7 +26,7 @@
 <strong>{{ t("ui.date") }}:</strong> {{ metadata.date }}
 · <strong>{{ t("ui.time") }}:</strong> {{ metadata.time }}
 · <strong>{{ t("ui.organization_number") }}:</strong> {{ metadata.store_org }}
-· <strong>{{ t("ui.receipt_number") }}:</strong> {{ metadata.receipt_number }}
+· <strong>{{ t("ui.receipt_number") }}:</strong> {{ metadata.receipt_no }}
 </p>
 
 {% if grocy_error %}
@@ -79,6 +79,8 @@
     {{ t("status.imported") }}
 {% elif item.status == "Failed" %}
     {{ t("status.failed") }}
+{% elif item.match_type == "ignored" %}
+    {{ t("ui.ignored") }}
 {% elif item.status == "Skipped" %}
     {{ t("status.skipped") }}
 {% elif item.status == "Undone" %}
@@ -91,7 +93,7 @@
 </td>
 
 <td>
-{% if item.kind == "product" %}
+{% if item.kind == "product" or item.match_type == "ignored" %}
     <input
         type="checkbox"
         name="include_{{ loop.index0 }}"
@@ -132,7 +134,7 @@
 
 <td>
 
-{% if item.kind == "product" %}
+{% if item.kind == "product" or item.match_type == "ignored" %}
 
 <div
     class="product-selection"
@@ -158,6 +160,9 @@
 </option>
 {% else %}
 <option value="">{{ t("ui.skip_item") }}</option>
+<option value="ignore" {% if item.match_type == "ignored" %}selected{% endif %}>
+    {{ t("ui.ignore_item") }}
+</option>
 <option value="new">New product</option>
 {% endif %}
 
@@ -946,11 +951,12 @@ document.querySelectorAll("select[data-include-checkbox]").forEach(function (sel
 
     function updateCheckbox() {
         const skipSelected = select.value === "";
+        const ignoreSelected = select.value === "ignore";
         const newProductSelected = select.value === "new";
         const newProductConfigured = checkbox.dataset.newProductConfigured === "true";
         const imported = checkbox.dataset.imported === "true";
 
-        if (skipSelected) {
+        if (skipSelected || ignoreSelected) {
             checkbox.checked = false;
             checkbox.disabled = true;
         } else if (newProductSelected) {
@@ -1818,15 +1824,29 @@ function updateImportButton() {
         'input[type="checkbox"][name^="include_"]:checked:not(:disabled)'
     ).length;
 
-    importItemsButton.disabled = selected === 0;
+    const ignored = Array.from(
+        importForm.querySelectorAll('select[name^="product_"]')
+    ).filter(function (select) {
+        return select.value === "ignore";
+    }).length;
+
+    const totalSelected = selected + ignored;
+
+    importItemsButton.disabled = totalSelected === 0;
     importItemsButton.textContent =
-        "{{ t('ui.import_items_count') }}".replace("{count}", selected);
+        "{{ t('ui.import_items_count') }}".replace("{count}", totalSelected);
 }
 
 importForm.querySelectorAll(
     'input[type="checkbox"][name^="include_"]'
 ).forEach(function (checkbox) {
     checkbox.addEventListener("change", updateImportButton);
+});
+
+importForm.querySelectorAll(
+    'select[name^="product_"]'
+).forEach(function (select) {
+    select.addEventListener("change", updateImportButton);
 });
 
 updateImportButton();

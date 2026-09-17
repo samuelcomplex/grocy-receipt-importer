@@ -26,6 +26,7 @@ class ReceiptItem(BaseModel):
     discount: Decimal | None = None
     net: Decimal | None = None
     kind: ItemKind = ItemKind.PRODUCT
+    ignored: bool = False
 
 
 class Receipt(BaseModel):
@@ -37,6 +38,6 @@ class Receipt(BaseModel):
     store_address: str | None = None
     date: Date | None = None
     time: Time | None = None
-    receipt_number: str | None = None
+    receipt_no: str | None = None
     cashier: str | None = None
     items: list[ReceiptItem]

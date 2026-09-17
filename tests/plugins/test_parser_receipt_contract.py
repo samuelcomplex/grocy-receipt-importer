@@ -16,13 +16,14 @@ class ContractParser(ReceiptParser):
             "metadata": {
                 "store_org": "TEST",
                 "store_name": "Test Store",
-                "receipt_number": "123",
+                "receipt_no": "123",
                 "date": "2026-09-08",
                 "time": "12:00",
             },
             "items": [
                 {
                     "kind": "product",
+                    "ignored": True,
                     "description": "Test product",
                     "article_number": "1234567",
                     "quantity": "1",
@@ -47,13 +48,14 @@ def test_parser_contract_produces_common_receipt_model():
     assert receipt.retailer == "ContractTest"
     assert receipt.store_org == "TEST"
     assert receipt.store_name == "Test Store"
-    assert receipt.receipt_number == "123"
+    assert receipt.receipt_no == "123"
     assert receipt.date.isoformat() == "2026-09-08"
     assert receipt.time.isoformat() == "12:00:00"
 
     assert len(receipt.items) == 1
     assert receipt.items[0].description == "Test product"
     assert receipt.items[0].article_number == "1234567"
+    assert receipt.items[0].ignored is True
 
 
 def test_all_discovered_parsers_have_required_interface():

@@ -40,10 +40,15 @@ class ICAParser(ReceiptParser):
         )
 
     def parse(self, text):
-            lines = [
-                re.sub(r"\s+", " ", line).strip()
+            layout_lines = [
+                line.rstrip()
                 for line in text.splitlines()
                 if line.strip()
+            ]
+
+            lines = [
+                re.sub(r"\s+", " ", line).strip()
+                for line in layout_lines
             ]
 
             metadata = {
@@ -64,40 +69,67 @@ class ICAParser(ReceiptParser):
                     break
 
             # Address
-            for i, line in enumerate(lines):
-                if re.match(r"^\d{5}\s+", line):
-                    metadata["address"] = " ".join(lines[max(0, i - 1):i + 1])
-                    break
+            street = ""
+            city = ""
 
-            # Metadata block used by the ICA PDF.
-            # The PDF extracts six labels followed by six values.
-            metadata_labels = [
-                "Datum",
-                "Tid",
-                "Org nr",
-                "Kvitto nr",
-                "Kassa",
-                "Kassör",
-            ]
+            for line in layout_lines:
+                street_match = re.match(
+                    r"^\s*(.*?)\s{2,}Datum\s+\d{4}-\d{2}-\d{2}\s*$",
+                    line,
+                    re.IGNORECASE,
+                )
+                if street_match:
+                    street = street_match.group(1).strip()
 
+                city_match = re.match(
+                    r"^\s*(\d{5}\s+[^\s]+(?:\s+[^\s]+)*)\s{2,}Tid\s+\d{2}:\d{2}\s*$",
+                    line,
+                    re.IGNORECASE,
+                )
+                if city_match:
+                    city = city_match.group(1).strip()
+
+            if street and city:
+                metadata["address"] = f"{street} {city}"
+            else:
+                for i, line in enumerate(lines):
+                    if re.match(r"^\d{5}\s+", line):
+                        metadata["address"] = " ".join(
+                            lines[max(0, i - 1):i + 1]
+                        )
+                        break
+
+            # Metadata in layout extraction is kept in the right-hand column.
+            metadata_fields = {
+                "Datum": "date",
+                "Tid": "time",
+                "Org nr": "store_org",
+                "Kvitto nr": "receipt_no",
+                "Kassa": "register",
+                "Kassör": "cashier",
+            }
+
+            for line in layout_lines:
+                for label, field in metadata_fields.items():
+                    match = re.search(
+                        rf"{re.escape(label)}\s+(.+?)\s*$",
+                        line,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        metadata[field] = match.group(1).strip()
+                        break
+
+            # Fall back to the original six-label/six-value representation.
+            metadata_labels = list(metadata_fields)
             for i in range(len(lines) - len(metadata_labels)):
                 if lines[i:i + len(metadata_labels)] == metadata_labels:
                     values_start = i + len(metadata_labels)
                     values = lines[
-                        values_start:
-                        values_start + len(metadata_labels)
+                        values_start:values_start + len(metadata_labels)
                     ]
 
-                    fields = [
-                        "date",
-                        "time",
-                        "store_org",
-                        "receipt_no",
-                        "register",
-                        "cashier",
-                    ]
-
-                    for field, value in zip(fields, values):
+                    for field, value in zip(metadata_fields.values(), values):
                         metadata[field] = value
 
                     break

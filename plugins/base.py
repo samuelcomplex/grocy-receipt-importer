@@ -7,13 +7,14 @@ class ReceiptMetadata(TypedDict, total=False):
     store_org: str
     store_name: str
     store_address: str
-    receipt_number: str
+    receipt_no: str
     date: str
     cashier: str
 
 
 class ReceiptItem(TypedDict, total=False):
     kind: str
+    ignored: bool
     description: str
     article_number: str
     quantity: str

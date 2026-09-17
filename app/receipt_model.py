@@ -74,7 +74,7 @@ def receipt_from_parser_output(data, retailer):
         store_address=metadata.get("store_address") or metadata.get("address") or None,
         date=_parse_date(metadata.get("date")),
         time=_parse_time(metadata.get("time")),
-        receipt_number=metadata.get("receipt_number") or metadata.get("receipt_no") or None,
+        receipt_no=metadata.get("receipt_no") or None,
         cashier=metadata.get("cashier") or None,
         items=[
             ReceiptItem(
@@ -87,10 +87,25 @@ def receipt_from_parser_output(data, retailer):
                 discount=_decimal(item.get("discount")),
                 net=_decimal(item.get("net")),
                 kind=item.get("kind", "product"),
+                ignored=item.get("ignored", item.get("kind") == "deposit"),
             )
             for item in items
         ],
     )
+
+def standardized_metadata(receipt, metadata):
+    """Return parser metadata using the common Receipt field names."""
+    result = dict(metadata)
+
+    result["store_name"] = receipt.store_name
+    result["store_org"] = receipt.store_org
+    result["store_address"] = receipt.store_address
+    result["receipt_no"] = receipt.receipt_no
+    result["date"] = receipt.date.isoformat() if receipt.date else None
+    result["time"] = receipt.time.isoformat() if receipt.time else None
+    result["cashier"] = receipt.cashier
+
+    return result
 
 
 def receipt_from_storage(row):
@@ -104,7 +119,7 @@ def receipt_from_storage(row):
         store_address=metadata.get("store_address"),
         date=_parse_date(metadata.get("date")),
         time=_parse_time(metadata.get("time")),
-        receipt_number=metadata.get("receipt_number") or metadata.get("receipt_no"),
+        receipt_no=metadata.get("receipt_no"),
         cashier=metadata.get("cashier"),
         items=[ReceiptItem.model_validate(item) for item in items],
     )

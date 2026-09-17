@@ -30,9 +30,9 @@ from app.product_service import (
     create_new_grocy_product,
     validate_new_product_configuration,
 )
-from app.receipt_model import receipt_from_parser_output, receipt_from_storage
+from app.receipt_model import receipt_from_parser_output, receipt_from_storage, standardized_metadata
 from app.storage import create_alias_storage, create_mapping_storage, create_receipt_storage
-from app.web import DEFAULT_LANGUAGE, TRANSLATIONS, render_template
+from app.web import DEFAULT_LANGUAGE, TRANSLATIONS, get_language, render_template
 from common import money
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -65,10 +65,12 @@ def json_response(payload, status_code=200):
 
 def initialize_item_state(items):
     for item in items:
+        ignored = bool(item.get("ignored", False))
+        item["ignored"] = ignored
         item.setdefault("grocy_product_id", None)
         item.setdefault("grocy_product_name", "")
-        item.setdefault("status", "Pending")
-        item.setdefault("match_type", None)
+        item.setdefault("status", "Skipped" if ignored else "Pending")
+        item.setdefault("match_type", "ignored" if ignored else None)
 
 
 
@@ -83,7 +85,7 @@ def extract_pdf_text(pdf_data):
     pages = []
 
     for page in reader.pages:
-        pages.append(page.extract_text() or "")
+        pages.append(page.extract_text(extraction_mode="layout") or "")
 
     return "\n".join(pages)
 
@@ -112,6 +114,11 @@ def apply_saved_mappings(metadata, items):
         row = alias_storage.get(store_org, normalized_description)
 
         if row:
+            if row["ignored"]:
+                item["status"] = "Skipped"
+                item["match_type"] = "ignored"
+                continue
+
             item["grocy_product_id"] = row["grocy_product_id"]
             item["grocy_product_name"] = row["grocy_product_name"]
             item["match_type"] = "alias"
@@ -184,19 +191,22 @@ async def undo_new_product(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse("Receipt not found", status_code=404)
+        return json_response({"ok": False, "error": "Receipt not found"}, status_code=404)
 
     items = json.loads(row["items_json"])
 
     if item_index < 0 or item_index >= len(items):
-        return HTMLResponse("Item not found", status_code=404)
+        return json_response({"ok": False, "error": "Item not found"}, status_code=404)
 
     item = items[item_index]
     product_id = item.get("grocy_product_id")
 
     if item.get("match_type") != "new" or not product_id:
-        return HTMLResponse(
-            "This new product cannot be safely undone.",
+        return json_response(
+            {
+                "ok": False,
+                "error": "This new product cannot be safely undone.",
+            },
             status_code=400,
         )
 
@@ -214,8 +224,11 @@ async def undo_new_product(
         or items[index].get("transaction_id")
         for index in affected_indexes
     ):
-        return HTMLResponse(
-            "This new product cannot be safely undone.",
+        return json_response(
+            {
+                "ok": False,
+                "error": "This new product cannot be safely undone.",
+            },
             status_code=400,
         )
 
@@ -305,12 +318,12 @@ async def undo_import(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse("Receipt not found", status_code=404)
+        return json_response({"ok": False, "error": "Receipt not found"}, status_code=404)
 
     items = json.loads(row["items_json"])
 
     if item_index < 0 or item_index >= len(items):
-        return HTMLResponse("Item not found", status_code=404)
+        return json_response({"ok": False, "error": "Item not found"}, status_code=404)
 
     item = items[item_index]
     transaction_id = item.get("transaction_id")
@@ -353,8 +366,11 @@ async def undo_import(
             items_json=json.dumps(items, ensure_ascii=False),
         )
 
-        return HTMLResponse(
-            f"Undo failed: {exc}",
+        return json_response(
+            {
+                "ok": False,
+                "error": f"Undo failed: {exc}",
+            },
             status_code=502,
         )
 
@@ -428,9 +444,13 @@ async def delete_receipt(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse(
-            "Receipt not found",
-            status_code=404,
+        return render_template(
+            request,
+            "index.html",
+            {
+                "recent": [],
+                "error": "Receipt not found",
+            },
         )
 
     receipt_storage.delete(receipt_id)
@@ -443,6 +463,7 @@ async def delete_receipt(
 
 @app.post("/upload")
 async def upload(
+    request: Request,
     pdf: UploadFile = File(...),
 ):
     data = await pdf.read()
@@ -462,9 +483,26 @@ async def upload(
     parser = find_parser(text)
 
     if parser is None:
-        return HTMLResponse(
-            "No receipt parser recognized this receipt.",
-            status_code=400,
+        recent = receipt_storage.list_recent()
+        receipts = []
+
+        for row in recent:
+            receipt = receipt_from_storage(row)
+            receipts.append({
+                "id": row["id"],
+                "filename": row["filename"],
+                "date": receipt.date.isoformat() if receipt.date else "",
+                "store": receipt.store_name or "",
+                "status": row["status"],
+            })
+
+        return render_template(
+            request,
+            "index.html",
+            {
+                "recent": receipts,
+                "error": TRANSLATIONS[get_language(request)]["ui.receipt_parser_not_found"],
+            },
         )
 
     parsed = parser.parse(text)
@@ -522,17 +560,26 @@ def review(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse(
-            "Receipt not found",
-            status_code=404,
+        return render_template(
+            request,
+            "index.html",
+            {
+                "recent": [],
+                "error": "Receipt not found",
+            },
         )
 
     receipt = receipt_from_storage(row)
-    metadata = json.loads(row["metadata_json"])
+    metadata = standardized_metadata(
+        receipt,
+        json.loads(row["metadata_json"]),
+    )
     items = [
         item.model_dump(mode="json")
         for item in receipt.items
     ]
+
+    initialize_item_state(items)
 
     parser_name = metadata.get("parser_name")
     parser_theme = metadata.get("parser_theme")
@@ -578,6 +625,8 @@ def review(
         product_groups = []
         shopping_locations = []
         grocy_error = str(exc)
+
+    apply_saved_mappings(metadata, items)
 
     receipt_storage.update(
         receipt_id,
@@ -742,8 +791,8 @@ async def stage_new_product(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse(
-            "Receipt not found",
+        return json_response(
+            {"ok": False, "error": "Receipt not found"},
             status_code=404,
         )
 
@@ -906,9 +955,13 @@ async def import_receipt(
     row = get_receipt(receipt_id)
 
     if not row:
-        return HTMLResponse(
-            "Receipt not found",
-            status_code=404,
+        return render_template(
+            request,
+            "index.html",
+            {
+                "recent": [],
+                "error": "Receipt not found",
+            },
         )
 
     receipt = receipt_from_storage(row)
@@ -975,7 +1028,12 @@ async def import_receipt(
         )
 
     for index, item in enumerate(items):
-        if item["kind"] != "product":
+        editable = (
+            item.get("kind") == "product"
+            or item.get("match_type") == "ignored"
+        )
+
+        if not editable:
             item["status"] = "Skipped"
             skipped += 1
             continue
@@ -986,12 +1044,32 @@ async def import_receipt(
         include = f"include_{index}" in form
         selected_product_id = form.get(f"product_{index}")
 
+        selected_product_id = str(selected_product_id) if selected_product_id else ""
+
+        if selected_product_id == "ignore":
+            store_org = metadata.get("store_org")
+            description = item.get("description", "")
+            normalized_description = normalize_product_name(description)
+
+            if store_org and normalized_description:
+                alias_storage.save(
+                    store_org,
+                    normalized_description,
+                    None,
+                    "",
+                    True,
+                )
+
+            item["status"] = "Skipped"
+            item["match_type"] = "ignored"
+            item.pop("error", None)
+            skipped += 1
+            continue
+
         if not include or not selected_product_id:
             item["status"] = "Skipped"
             skipped += 1
             continue
-
-        selected_product_id = str(selected_product_id)
         article_number = item.get("article_number")
 
         try:
@@ -1158,6 +1236,7 @@ async def import_receipt(
                     int(selected_product_id),
                     product_name,
                 )
+                item["match_type"] = "saved"
 
             item["status"] = "Imported"
             item["grocy_product_id"] = int(selected_product_id)

@@ -13,7 +13,8 @@ def test_extract_pdf_text(monkeypatch):
         def __init__(self, text):
             self.text = text
 
-        def extract_text(self):
+        def extract_text(self, extraction_mode=None):
+            assert extraction_mode == "layout"
             return self.text
 
     class FakeReader:
@@ -1992,3 +1993,52 @@ async def test_import_aborts_when_grocy_product_list_cannot_be_loaded(monkeypatc
     assert stock_calls == []
     assert mappings.saved == []
     assert aliases.saved == []
+
+@pytest.mark.anyio
+async def test_review_reapplies_saved_ignored_alias(monkeypatch):
+    receipt = {
+        "id": "receipt-ignored",
+        "sha256": "ignored123",
+        "filename": "receipt.pdf",
+        "raw_text": "receipt text",
+        "metadata_json": '{"store_org": "TEST", "parser_name": "Test"}',
+        "items_json": '[{"kind": "product", "description": "Milk", "grocy_product_id": null}]',
+        "status": "review",
+        "created_at": "2026-09-05T17:00:00",
+    }
+
+    class FakeReceiptStorage:
+        def get(self, receipt_id):
+            return receipt
+
+        def update(self, receipt_id, **fields):
+            pass
+
+    class FakeAliasStorage:
+        def get(self, store_org, normalized_description):
+            return {
+                "store_org": "TEST",
+                "normalized_description": "milk",
+                "grocy_product_id": None,
+                "grocy_product_name": "",
+                "ignored": 1,
+            }
+
+    monkeypatch.setattr(main, "receipt_storage", FakeReceiptStorage())
+    monkeypatch.setattr(main, "alias_storage", FakeAliasStorage())
+    monkeypatch.setattr(main, "load_products", lambda: [])
+    monkeypatch.setattr(main, "load_locations", lambda: [])
+    monkeypatch.setattr(main, "load_quantity_units", lambda: [])
+    monkeypatch.setattr(main, "load_product_groups", lambda: [])
+    monkeypatch.setattr(main, "load_shopping_locations", lambda: [])
+    monkeypatch.setattr(main, "suggest_product_matches", lambda items, products: None)
+    monkeypatch.setattr(
+        main,
+        "render_template",
+        lambda request, template, context: context,
+    )
+
+    result = main.review(None, "receipt-ignored")
+
+    assert result["items"][0]["status"] == "Skipped"
+    assert result["items"][0]["match_type"] == "ignored"
